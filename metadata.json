@@ -1,0 +1,5 @@
+{
+  "name": "Chiller Re-entrainment Surrogate Model",
+  "description": "A parametric analysis tool based on Watson & Charentenay (2019) to visualize air re-entrainment and temperature rise in air-cooled chiller compounds.",
+  "requestFramePermissions": []
+}
