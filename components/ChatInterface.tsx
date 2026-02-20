@@ -21,7 +21,7 @@ interface Message {
 }
 
 const ChatInterface: React.FC<ChatInterfaceProps> = ({ inputs, results, onUpdate, inputRanges }) => {
-    const [isOpen, setIsOpen] = useState(true);
+    const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState<Message[]>([]);
     const [inputText, setInputText] = useState('');
     const [isLoading, setIsLoading] = useState(false);
