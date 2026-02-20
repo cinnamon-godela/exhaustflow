@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { SimulationInputs, SimulationResult } from '../types';
+import type { InputRanges } from '../services/datasetRanges';
+import { clamp } from '../services/datasetRanges';
 import { Send, User, Bot, Terminal, MessageSquare, Minimize2, GripHorizontal, Loader2, Zap } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
 
@@ -7,6 +9,8 @@ interface ChatInterfaceProps {
     inputs: SimulationInputs;
     results: SimulationResult;
     onUpdate: (newInputs: SimulationInputs) => void;
+    /** Bounds for the four controllable inputs (same as Quick Input). When set, the assistant may only change inputs within these ranges. */
+    inputRanges?: InputRanges;
 }
 
 interface Message {
@@ -16,7 +20,7 @@ interface Message {
     isCommand?: boolean;
 }
 
-const ChatInterface: React.FC<ChatInterfaceProps> = ({ inputs, results, onUpdate }) => {
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ inputs, results, onUpdate, inputRanges }) => {
     const [isOpen, setIsOpen] = useState(true);
     const [messages, setMessages] = useState<Message[]>([]);
     const [inputText, setInputText] = useState('');
@@ -25,8 +29,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ inputs, results, onUpdate
     const bottomRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
-    // Check for API Key presence for the "Tie" status
-    const isConnected = !!process.env.API_KEY;
+    // Gemini API key (Vite exposes env via import.meta.env; fallback for local dev)
+    const geminiApiKey = import.meta.env.VITE_GEMINI_API_KEY || 'AIzaSyC4pPGi8B_Igmp6gfxf0bsUbBss5AQB5oM';
+    const isConnected = !!geminiApiKey;
 
     // Dragging Logic
     const [position, setPosition] = useState<{x: number, y: number} | null>(null);
@@ -97,7 +102,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ inputs, results, onUpdate
                 setMessages(prev => [...prev, {
                     id: Date.now() + 1,
                     role: 'assistant',
-                    text: "I am not connected to Gemini. Please ensure your API_KEY is set in the environment variables.",
+                    text: "I am not connected to Gemini. Set VITE_GEMINI_API_KEY in your .env to enable the design assistant.",
                     isCommand: false
                 }]);
                 setIsLoading(false);
@@ -106,47 +111,57 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ inputs, results, onUpdate
         }
 
         try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const ai = new GoogleGenAI({ apiKey: geminiApiKey });
             
+            const ranges = inputRanges ?? {
+                windSpeed: { min: 0, max: 10 },
+                flowRateKcfm: { min: 30, max: 150 },
+                orientation: { min: 0, max: 90 },
+                rowSpacing: { min: 10, max: 20 },
+            };
+
             const currentStateDescription = `
-                Current Simulation State:
-                - Geometry: ${inputs.rows} rows x ${inputs.columns} columns
-                - Spacing: Row ${inputs.rowSpacing} ft / Col ${inputs.colSpacing} ft
-                - Flow Velocity: ${inputs.windSpeed} m/s
-                - Flow Angle: ${inputs.windDirection} deg
-                - Ambient: ${inputs.ambientTemp} F
-                - Flow Rate: ${inputs.flowRate} kCFM
-                - EFT Base (Vertical Stacks): ${inputs.eftBase}
-                - Discharge Extension (Straightener): ${inputs.fanExtension}
+                Current Simulation State (controllable parameters only):
+                - Wind Speed: ${inputs.windSpeed} m/s
+                - Flow Rate: ${inputs.flowRate} kCFM (${inputs.flowRate * 1000} CFM)
+                - Wind Direction (Orientation): ${inputs.windDirection}°
+                - Row Spacing: ${inputs.rowSpacing} ft
 
                 Current Performance Results:
                 - Peak Intake Temp: ${results.maxTotalTemp} F
                 - Avg Temp Rise: ${results.avgTempRise} F
                 - Risk Level: ${results.riskLevel}
-                - Effective Path Length (Watson Metric): ${results.benchmark.effectiveLengthMeters} meters
+                - Effective Path Length (Watson): ${results.benchmark.effectiveLengthMeters} m
                 - Watson Predicted Peak Rise: ${results.benchmark.predictedMaxRiseF} F
             `;
 
-            const expertContext = `
-                THEORY OF OPERATIONS:
-                You are an expert in Computational Fluid Dynamics (CFD) specializing in Mission Critical Data Center Cooling.
-                You manage a surrogate model based on parametric analysis of Air-Cooled Chillers (ACCs).
-                
-                RESEARCH BASIS (Watson & Charentenay, 2019):
-                You have been trained on the paper "Parametric Study of Air Re-entrainment within Air-Cooled Chiller Compounds".
-                Key Findings from this paper:
-                1. **Plant Compound Length ($L_{PC}$)** is the dominant component affecting re-entrainment (Correlation coeff 0.99).
-                2. Re-entrainment increases linearly with wind speed and plant length.
-                3. **Rule of Thumb**: A 25m long compound results in ~5°C average and ~10°C peak rise.
-                4. The model derives specific linear estimates:
-                   - Avg Rise (C) = 8.7 * max((L - 38.9)/26.8, -1) + 9.0
-                   - Max Rise (C) = 18.7 * max((L - 38.9)/26.8, -1) + 19.5
-                5. High wind speeds (10m/s) aligned with the chiller length create the worst-case scenario.
+            const allowedBounds = `
+                You may ONLY suggest changes to these four parameters, and ONLY within these exact bounds (values outside are invalid):
+                - windSpeed (m/s): min ${ranges.windSpeed.min}, max ${ranges.windSpeed.max}
+                - flowRate (kCFM): min ${ranges.flowRateKcfm.min}, max ${ranges.flowRateKcfm.max}
+                - windDirection (degrees): min ${ranges.orientation.min}, max ${ranges.orientation.max}
+                - rowSpacing (feet): min ${ranges.rowSpacing.min}, max ${ranges.rowSpacing.max}
+                Do not suggest or return rows, columns, colSpacing, ambientTemp, eftBase, fanExtension, or resetLayout. They are fixed in this application.
+            `;
 
-                MITIGATION STRATEGIES (EFT):
-                - "EFT Base" (Exhaust Flow Technology) utilizes vertical discharge stacks to increase plume momentum.
-                - Physics: It punches through the boundary layer, preventing downwash and re-entrainment.
-                - Model Impact: Reduces peak temperature rise by ~65% and enforces uniformity (Peak Shaving).
+            const expertContext = `
+                ROLE: You are a senior HVAC engineer and thermal simulation expert specializing in mission-critical data center cooling and air-cooled chiller compounds (ACCs). You answer with the depth of an HVAC expert and a thermal/CFD simulation engineer.
+
+                DOMAIN KNOWLEDGE:
+                - HVAC: Chiller plant layout, re-entrainment, plume behavior, ambient conditions, flow rates (CFM), and how wind speed and direction affect intake temperatures.
+                - Thermal simulation: Surrogate models, parametric studies, peak/avg temperature rise, risk levels, and design margins (e.g. N+1).
+                - Research basis: Watson & Charentenay (2019), "Parametric Study of Air Re-entrainment within Air-Cooled Chiller Compounds":
+                  - Plant compound length (L_PC) is the dominant factor (correlation ~0.99).
+                  - Re-entrainment scales with wind speed and plant length.
+                  - ~25 m compound: ~5°C average, ~10°C peak rise.
+                  - Avg Rise (C) ≈ 8.7*max((L-38.9)/26.8,-1)+9.0; Max Rise (C) ≈ 18.7*max((L-38.9)/26.8,-1)+19.5.
+                  - Worst case: high wind (e.g. 10 m/s) aligned with chiller length.
+                - EFT (Exhaust Flow Technology): Vertical stacks increase plume momentum, reduce downwash and re-entrainment; can reduce peak rise ~65% and improve uniformity. This app's baseline data is for EFT Base ON.
+
+                BEHAVIOR:
+                1. Answer all HVAC and thermal simulation questions with expert-level accuracy and clarity.
+                2. When the user asks to change conditions (e.g. "simulate higher wind", "try 80k CFM", "worst-case orientation"), suggest only the four allowed parameters and stay within the bounds below.
+                3. If the user asks to change geometry, ambient, or hardware (EFT/fan extension), explain that in this app only wind speed, flow rate, wind direction, and row spacing are adjustable; other settings are fixed.
             `;
 
             const response = await ai.models.generateContent({
@@ -155,47 +170,20 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ inputs, results, onUpdate
                 config: {
                     systemInstruction: `
                         ${expertContext}
-                        
                         ${currentStateDescription}
-
-                        Guidelines:
-                        1. **Dialogue**: Act like a consultant. Answer ALL questions. 
-                        2. **Using the Paper**: If the user asks about validation, mention Watson & Charentenay (2019). If the user asks about array size, mention that "Plant Length" is the critical factor identified in the research.
-                        3. **Parameter Setting**: If the user asks to change something, map it to parameters.
-                           - "Make it bigger" -> Increase rows/cols.
-                           - "Spread them out" -> Increase rowSpacing/colSpacing.
-                           - "Add straighteners/stacks/EFT" -> Set eftBase or fanExtension to true.
-                           - "Simulate a storm" -> Increase windSpeed.
-                        
-                        Constraints:
-                        - rows, columns: 1 to 10.
-                        - rowSpacing, colSpacing: 5 to 50 (feet).
-                        - windSpeed: 0 to 20 (m/s).
-                        - windDirection: 0 to 360 (degrees).
-                        - flowRate: 30 to 200 (kCFM).
-                        - ambientTemp: 60 to 120 (Fahrenheit).
+                        ${allowedBounds}
 
                         OUTPUT FORMAT:
-                        Return a JSON object.
-                        - If parameters need changing, include them in the JSON.
-                        - ALWAYS include a 'responseMessage' field with your text answer/advice. 
-                        - If no parameters change, just return the 'responseMessage'.
+                        You must respond with ONLY a single JSON object, no other text. The JSON must have a "responseMessage" string (your reply to the user). Optionally include windSpeed, flowRate, windDirection, rowSpacing as numbers to change inputs. Example: {"responseMessage": "Set wind speed to 10 m/s.", "windSpeed": 10}
                     `,
                     responseMimeType: "application/json",
                     responseSchema: {
                         type: Type.OBJECT,
                         properties: {
-                            rows: { type: Type.NUMBER },
-                            columns: { type: Type.NUMBER },
-                            rowSpacing: { type: Type.NUMBER },
-                            colSpacing: { type: Type.NUMBER },
                             windSpeed: { type: Type.NUMBER },
-                            windDirection: { type: Type.NUMBER },
                             flowRate: { type: Type.NUMBER },
-                            ambientTemp: { type: Type.NUMBER },
-                            eftBase: { type: Type.BOOLEAN },
-                            fanExtension: { type: Type.BOOLEAN },
-                            resetLayout: { type: Type.BOOLEAN },
+                            windDirection: { type: Type.NUMBER },
+                            rowSpacing: { type: Type.NUMBER },
                             responseMessage: { type: Type.STRING },
                         },
                         required: ["responseMessage"]
@@ -203,80 +191,79 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ inputs, results, onUpdate
                 }
             });
 
-            const resultText = response.text;
-            if (resultText) {
-                const data = JSON.parse(resultText);
-                
-                const newInputs = { ...inputs };
-                let hasChanges = false;
-                let geometryChanged = false;
-
-                if (data.rows !== undefined && data.rows !== inputs.rows) { 
-                    newInputs.rows = data.rows; 
-                    hasChanges = true; 
-                    geometryChanged = true;
-                }
-                if (data.columns !== undefined && data.columns !== inputs.columns) { 
-                    newInputs.columns = data.columns; 
-                    hasChanges = true; 
-                    geometryChanged = true;
-                }
-                if (data.rowSpacing !== undefined && data.rowSpacing !== inputs.rowSpacing) { 
-                    newInputs.rowSpacing = data.rowSpacing; 
-                    hasChanges = true; 
-                }
-                if (data.colSpacing !== undefined && data.colSpacing !== inputs.colSpacing) { 
-                    newInputs.colSpacing = data.colSpacing; 
-                    hasChanges = true; 
-                }
-                if (data.windSpeed !== undefined && data.windSpeed !== inputs.windSpeed) { 
-                    newInputs.windSpeed = data.windSpeed; 
-                    hasChanges = true; 
-                }
-                if (data.windDirection !== undefined && data.windDirection !== inputs.windDirection) { 
-                    newInputs.windDirection = data.windDirection; 
-                    hasChanges = true; 
-                }
-                if (data.flowRate !== undefined && data.flowRate !== inputs.flowRate) { 
-                    newInputs.flowRate = data.flowRate; 
-                    hasChanges = true; 
-                }
-                if (data.ambientTemp !== undefined && data.ambientTemp !== inputs.ambientTemp) { 
-                    newInputs.ambientTemp = data.ambientTemp; 
-                    hasChanges = true; 
-                }
-                if (data.eftBase !== undefined && data.eftBase !== inputs.eftBase) { 
-                    newInputs.eftBase = data.eftBase; 
-                    hasChanges = true; 
-                }
-                if (data.fanExtension !== undefined && data.fanExtension !== inputs.fanExtension) { 
-                    newInputs.fanExtension = data.fanExtension; 
-                    hasChanges = true; 
-                }
-                
-                if (geometryChanged || data.resetLayout) {
-                    const newSize = newInputs.rows * newInputs.columns;
-                    newInputs.layout = Array(newSize).fill(true);
-                    hasChanges = true;
-                }
-
-                if (hasChanges) {
-                    onUpdate(newInputs);
-                }
-
+            const resultText = response.text?.trim();
+            if (!resultText) {
                 setMessages(prev => [...prev, {
                     id: Date.now() + 1,
                     role: 'assistant',
-                    text: data.responseMessage,
-                    isCommand: hasChanges
+                    text: "No response from the assistant. Try rephrasing or check your connection.",
+                    isCommand: false
                 }]);
+                return;
             }
-        } catch (error) {
-            console.error(error);
+
+            const raw = resultText.trim();
+            const jsonStr = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+            let data: { responseMessage?: string; windSpeed?: number; flowRate?: number; windDirection?: number; rowSpacing?: number };
+            try {
+                data = JSON.parse(jsonStr);
+            } catch {
+                setMessages(prev => [...prev, {
+                    id: Date.now() + 1,
+                    role: 'assistant',
+                    text: raw.length > 500 ? raw.slice(0, 500) + '…' : raw,
+                    isCommand: false
+                }]);
+                return;
+            }
+
+            const toNum = (x: unknown): number | undefined => {
+                if (typeof x === 'number' && !Number.isNaN(x)) return x;
+                if (typeof x === 'string') { const n = Number(x); return Number.isNaN(n) ? undefined : n; }
+                return undefined;
+            };
+
+            const newInputs = { ...inputs };
+            let hasChanges = false;
+
+            const w = toNum(data.windSpeed);
+            if (w !== undefined) {
+                const v = clamp(w, ranges.windSpeed.min, ranges.windSpeed.max);
+                if (v !== newInputs.windSpeed) { newInputs.windSpeed = v; hasChanges = true; }
+            }
+            const fr = toNum(data.flowRate);
+            if (fr !== undefined) {
+                const v = clamp(fr, ranges.flowRateKcfm.min, ranges.flowRateKcfm.max);
+                if (v !== newInputs.flowRate) { newInputs.flowRate = v; hasChanges = true; }
+            }
+            const wd = toNum(data.windDirection);
+            if (wd !== undefined) {
+                const v = clamp(wd, ranges.orientation.min, ranges.orientation.max);
+                if (v !== newInputs.windDirection) { newInputs.windDirection = v; hasChanges = true; }
+            }
+            const rs = toNum(data.rowSpacing);
+            if (rs !== undefined) {
+                const v = clamp(rs, ranges.rowSpacing.min, ranges.rowSpacing.max);
+                if (v !== newInputs.rowSpacing) { newInputs.rowSpacing = v; hasChanges = true; }
+            }
+
+            if (hasChanges) {
+                onUpdate(newInputs);
+            }
+
             setMessages(prev => [...prev, {
                 id: Date.now() + 1,
                 role: 'assistant',
-                text: "I encountered an error processing that request. Please try again.",
+                text: typeof data.responseMessage === 'string' ? data.responseMessage : (hasChanges ? 'Updated.' : 'Done.'),
+                isCommand: hasChanges
+            }]);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.error('Design assistant error:', error);
+            setMessages(prev => [...prev, {
+                id: Date.now() + 1,
+                role: 'assistant',
+                text: `Something went wrong: ${message}. Try again or rephrase.`,
                 isCommand: false
             }]);
         } finally {
@@ -357,7 +344,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ inputs, results, onUpdate
                     <div key={msg.id} className={`flex gap-2 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
                          <div className={`
                             w-5 h-5 rounded flex items-center justify-center flex-shrink-0 text-[10px] mt-0.5
-                            ${msg.role === 'assistant' ? 'bg-blue-500/10 text-blue-400' : 'bg-zinc-800 text-zinc-400'}
+                            ${msg.role === 'assistant' ? 'bg-yellow-500/10 text-yellow-400' : 'bg-zinc-800 text-zinc-400'}
                         `}>
                             {msg.role === 'assistant' ? <Bot size={12} /> : <User size={12} />}
                         </div>
@@ -365,7 +352,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ inputs, results, onUpdate
                             max-w-[85%] text-[11px] py-1.5 px-2.5 rounded-lg leading-relaxed
                             ${msg.role === 'assistant' 
                                 ? 'bg-zinc-800/40 text-zinc-300' 
-                                : 'bg-blue-600/10 border border-blue-500/20 text-blue-100'
+                                : 'bg-yellow-600/10 border border-yellow-500/20 text-yellow-100'
                             }
                         `}>
                             {msg.text}
@@ -380,7 +367,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ inputs, results, onUpdate
                 
                 {isLoading && (
                     <div className="flex gap-2">
-                         <div className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0 bg-blue-500/10 text-blue-400 text-[10px] mt-0.5">
+                         <div className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0 bg-yellow-500/10 text-yellow-400 text-[10px] mt-0.5">
                             <Bot size={12} />
                         </div>
                         <div className="bg-zinc-800/40 text-zinc-300 rounded-lg py-2 px-3">

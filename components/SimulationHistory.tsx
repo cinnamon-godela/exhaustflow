@@ -100,7 +100,7 @@ const SimulationHistory: React.FC<SimulationHistoryProps> = ({
                 {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b border-[#27272a]">
                     <div className="flex items-center gap-2 text-zinc-100">
-                        <Database className="text-blue-500" size={18} />
+                        <Database className="text-yellow-500" size={18} />
                         <h2 className="font-bold tracking-tight">Simulation Database</h2>
                     </div>
                     <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors">
@@ -119,12 +119,12 @@ const SimulationHistory: React.FC<SimulationHistoryProps> = ({
                             value={saveName}
                             onChange={(e) => setSaveName(e.target.value)}
                             placeholder="e.g. High Wind - 40C - Optimised"
-                            className="flex-grow bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-blue-500/50"
+                            className="flex-grow bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-yellow-500/50"
                         />
                         <button 
                             onClick={handleSave}
                             disabled={loading || !saveName.trim() || !supabase}
-                            className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-md text-xs font-bold flex items-center gap-2 transition-colors"
+                            className="bg-yellow-500 hover:bg-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed text-zinc-900 px-4 py-2 rounded-md text-xs font-bold flex items-center gap-2 transition-colors"
                         >
                             {loading ? <Loader2 className="animate-spin" size={14}/> : <Save size={14} />}
                             SAVE
@@ -163,7 +163,7 @@ const SimulationHistory: React.FC<SimulationHistoryProps> = ({
                                 >
                                     <div className="flex flex-col gap-1">
                                         <div className="flex items-center gap-2">
-                                            <span className="text-sm font-medium text-zinc-200 group-hover:text-blue-400 transition-colors">
+                                            <span className="text-sm font-medium text-zinc-200 group-hover:text-yellow-400 transition-colors">
                                                 {sim.name}
                                             </span>
                                             {sim.results?.riskLevel === 'Critical' && (
@@ -185,7 +185,7 @@ const SimulationHistory: React.FC<SimulationHistoryProps> = ({
 
                                     <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                         <button 
-                                            className="p-2 bg-blue-500/10 text-blue-400 rounded hover:bg-blue-500 hover:text-white transition-colors"
+                                            className="p-2 bg-yellow-500/10 text-yellow-400 rounded hover:bg-yellow-500 hover:text-zinc-900 transition-colors"
                                             title="Load Simulation"
                                         >
                                             <Download size={14} />

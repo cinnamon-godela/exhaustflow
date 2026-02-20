@@ -1,20 +1,31 @@
 import { SimulationInputs, SimulationResult, ChillerNode, ChillerSpecs, CapacityAnalysis } from '../types';
 
 /**
- * SURROGATE MODEL LOGIC
- * 
- * 1. Calculates ΔT_max using the user-provided regression equation.
- * 2. Uses the provided `dataset` to retrieve a representative spatial heat distribution.
- * 3. Scales the distribution so the peak matches the calculated ΔT_max.
- * 4. Calculates "Literature Benchmark" (Watson 2019).
- * 5. Calculates Capacity Derating & Redundancy Analysis.
+ * SURROGATE MODEL LOGIC (DATA-DRIVEN)
+ *
+ * Temperature output is a direct display of chiller temperatures from the database:
+ * 1. Lookup: find the closest row in the dataset (from Supabase chiller_baseline) by
+ *    Wind Speed (m/s), CFM (flow_rate), Orientation (°), Row Spacing (ft).
+ * 2. Display: use that row’s temperature array (Kelvin) as-is — convert to °F.
+ * 3. No regression scaling: shown temps are the DB temps for the matched configuration.
+ * 4. Literature benchmark and capacity/derating are still computed for context.
+ *
+ * --- DB TEMPERATURE → GRID CELL MAPPING ---
+ * Each dataset row has: [wind_speed, flow_rate, orientation, spacing, T0, T1, ..., T19].
+ * The 20 temperatures are in ROW-MAJOR order for a 4×5 grid:
+ *   - Indices 0–4:  row 0 (top),    columns 0–4 left to right
+ *   - Indices 5–9:  row 1,          columns 0–4
+ *   - Indices 10–14: row 2,         columns 0–4
+ *   - Indices 15–19: row 3 (bottom), columns 0–4
+ * So: grid cell (row, col) uses DB temperature at index (row * 5 + col).
+ * Example: cell at row 2, col 3 uses closestRow[DATA_START_INDEX + 2*5+3] = T13.
  */
 
-const DATA_START_INDEX = 4; // Index where chiller temps begin (C01 is at index 4)
+const DATA_START_INDEX = 4; // Index where chiller temps begin (row has 4 params then T0..T19)
 const DATA_AMBIENT_K = 313.15; // Assumed ambient of the dataset (40C / 104F)
 const DATASET_SIZE = 20;
 
-// Helper to convert Delta C to Delta F
+const kelvinToF = (K: number) => (K - 273.15) * (9 / 5) + 32;
 const toDeltaF = (deltaC: number) => deltaC * 1.8;
 const ftToMeters = (ft: number) => ft * 0.3048;
 
@@ -51,30 +62,17 @@ export const calculateSimulation = (
                 redundancyLabel: 'INTACT',
                 chillersAtRisk: 0,
                 chillersLockedOut: 0
-            }
+            },
+            matchedRowIndex: -1
         };
     }
 
-    // --- STEP 1: PHYSICS-INFORMED REGRESSION ---
-    const V = inputs.windSpeed;
-    const Q_kcfm = inputs.flowRate; 
+    // Orientation for lookup: 0–180° symmetric
     let orientation = inputs.windDirection % 180;
     if (orientation > 90) orientation = 180 - orientation;
     const thetaRad = (inputs.windDirection * Math.PI) / 180;
-    const Sr = inputs.rowSpacing;
-    const Sc = inputs.colSpacing;
 
-    let theoreticalMaxRiseC = 19.93 
-        + (0.457 * V) 
-        - (0.0825 * Q_kcfm) 
-        + (0.072 * orientation) 
-        - (0.359 * Sr * Math.abs(Math.cos(thetaRad))) 
-        - (0.312 * Sc * Math.abs(Math.sin(thetaRad))); 
-
-    theoreticalMaxRiseC = Math.max(theoreticalMaxRiseC, 0.1);
-    const theoreticalMaxRiseF = toDeltaF(theoreticalMaxRiseC);
-
-    // --- STEP 1.5: WATSON & CHARENTENAY (2019) BENCHMARK ---
+    // --- WATSON & CHARENTENAY (2019) BENCHMARK (reference only) ---
     const CHILLER_LENGTH_FT = 16; 
     const CHILLER_WIDTH_FT = 7.5;
     const arrayLengthFt = (inputs.rows * CHILLER_LENGTH_FT) + ((inputs.rows - 1) * inputs.rowSpacing);
@@ -92,38 +90,32 @@ export const calculateSimulation = (
         predictedAvgRiseF: parseFloat(toDeltaF(Math.max(watsonAvgC, 0)).toFixed(1))
     };
 
-    // --- STEP 2: SPATIAL PATTERN LOOKUP ---
+    // --- LOOKUP: closest row in DB by Wind Speed, CFM, Orientation, Row Spacing ---
     const inputSpeed = inputs.windSpeed;
-    const inputFlow = inputs.flowRate * 1000; 
-    const inputRowSpacing = inputs.rowSpacing; 
+    const inputFlow = inputs.flowRate * 1000; // kCFM → CFM to match DB flow_rate
+    const inputRowSpacing = inputs.rowSpacing;
 
     let minDistance = Number.MAX_VALUE;
     let closestRow = dataset[0];
+    let matchedRowIndex = 0;
 
-    for (const row of dataset) {
-        const dSpeed = (row[0] - inputSpeed) / 10;       
-        const dFlow = (row[1] - inputFlow) / 120000;     
-        const dOrient = (row[2] - orientation) / 90;     
-        const dSpacing = (row[3] - inputRowSpacing) / 20;   
-        const distSq = (dSpeed*dSpeed) + (dFlow*dFlow) + (dOrient*dOrient) + (dSpacing*dSpacing);
+    for (let i = 0; i < dataset.length; i++) {
+        const row = dataset[i];
+        const dSpeed = (row[0] - inputSpeed) / 10;
+        const dFlow = (row[1] - inputFlow) / 120000;
+        const dOrient = (row[2] - orientation) / 90;
+        const dSpacing = (row[3] - inputRowSpacing) / 20;
+        const distSq = (dSpeed * dSpeed) + (dFlow * dFlow) + (dOrient * dOrient) + (dSpacing * dSpacing);
         if (distSq < minDistance) {
             minDistance = distSq;
             closestRow = row;
+            matchedRowIndex = i;
         }
     }
 
-    // --- STEP 3: SCALING ---
-    let datasetMaxRiseK = 0;
-    const availablePoints = Math.min(DATASET_SIZE, closestRow.length - DATA_START_INDEX);
-    for (let i = 0; i < availablePoints; i++) {
-        const val = closestRow[DATA_START_INDEX + i] - DATA_AMBIENT_K;
-        if (val > datasetMaxRiseK) datasetMaxRiseK = val;
-    }
-    if (datasetMaxRiseK < 0.1) datasetMaxRiseK = 0.1;
-    const datasetMaxRiseF = toDeltaF(datasetMaxRiseK);
-    const scalingFactor = theoreticalMaxRiseF / datasetMaxRiseF;
+    // --- DIRECT DISPLAY: use this row’s chiller temperatures from the database (no scaling) ---
 
-    // --- STEP 4: GENERATE GRID & CALCULATE CAPACITY ---
+    // --- GENERATE GRID & CALCULATE CAPACITY ---
     const nodes: ChillerNode[] = [];
     let globalMaxRiseF = 0;
     let totalRiseSumF = 0;
@@ -137,38 +129,18 @@ export const calculateSimulation = (
     let chillersAtRisk = 0;
     let chillersLockedOut = 0;
 
+    // Grid is fixed 4×5; cell (row, col) → DB temp index = row*5+col (row-major)
     for (let i = 0; i < totalNodes; i++) {
         const row = Math.floor(i / inputs.columns);
         const col = i % inputs.columns;
-        
-        let baseRow = 0;
-        let baseCol = 0;
-        if (inputs.rows > 1) {
-             const ratio = row / (inputs.rows - 1);
-             baseRow = Math.round(ratio * (BASE_ROWS - 1));
-        }
-        if (inputs.columns > 1) {
-             const ratio = col / (inputs.columns - 1);
-             baseCol = Math.round(ratio * (BASE_COLS - 1));
-        }
-
-        const dataIndex = (baseRow * BASE_COLS) + baseCol;
+        const dataIndex = (row * BASE_COLS) + col; // 0..19, matches DB T0..T19
         const safeIndex = Math.min(Math.max(dataIndex, 0), DATASET_SIZE - 1);
-        const rawTempK = closestRow[DATA_START_INDEX + safeIndex];
-        
-        let baseRiseK = (rawTempK || DATA_AMBIENT_K) - DATA_AMBIENT_K;
-        if (baseRiseK < 0) baseRiseK = 0;
-        const baseRiseF = toDeltaF(baseRiseK);
-        let tempRiseF = baseRiseF * scalingFactor;
+        const rawTempK = closestRow[DATA_START_INDEX + safeIndex] ?? DATA_AMBIENT_K;
 
-        // EFT Modifiers
-        if (inputs.eftBase) {
-            tempRiseF *= 0.35; 
-            if (tempRiseF > 3.0) tempRiseF = 3.0 + (tempRiseF - 3.0) * 0.3;
-        }
-        if (inputs.fanExtension) tempRiseF *= 0.85; 
-
-        const finalTempF = inputs.ambientTemp + tempRiseF;
+        // Direct display: temperature from database (Kelvin → °F), no regression scaling
+        const finalTempF = kelvinToF(rawTempK);
+        const tempRiseF = finalTempF - inputs.ambientTemp;
+        const riseForStats = Math.max(0, tempRiseF);
         const isActive = inputs.layout[i] ?? true;
 
         // --- CAPACITY CALCULATION ---
@@ -203,8 +175,8 @@ export const calculateSimulation = (
                 }
             }
 
-            if (tempRiseF > globalMaxRiseF) globalMaxRiseF = tempRiseF;
-            totalRiseSumF += tempRiseF;
+            if (riseForStats > globalMaxRiseF) globalMaxRiseF = riseForStats;
+            totalRiseSumF += riseForStats;
             activeChillerCount++;
             totalEffectiveCapacity += effectiveCap;
         }
@@ -276,6 +248,7 @@ export const calculateSimulation = (
             redundancyLabel,
             chillersAtRisk,
             chillersLockedOut
-        }
+        },
+        matchedRowIndex
     };
 };

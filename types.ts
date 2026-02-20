@@ -60,4 +60,6 @@ export interface SimulationResult {
     riskLevel: 'Low' | 'Moderate' | 'High' | 'Critical';
     benchmark: LiteratureBenchmark;
     capacity: CapacityAnalysis;
+    /** Index into the dataset array for the matched row (for debugging: which DB entry the outputs refer to). */
+    matchedRowIndex: number;
 }
