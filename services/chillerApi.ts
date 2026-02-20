@@ -18,16 +18,19 @@ export type ChillerPredictResult =
   | { ok: true; row: number[] }
   | { ok: false; error: string };
 
-/** Chiller prediction API on AWS EC2. */
+/** Chiller API on AWS EC2 (HTTP). Not used from HTTPS pages (mixed content blocked). */
 const DEFAULT_CHILLER_API_URL = 'http://3.16.135.140:8080';
 
-/** In dev we use the Vite proxy so the browser never hits EC2 directly (avoids timeout/CORS). */
+/** In dev we use the Vite proxy so the browser never hits EC2 directly. */
 const PROXY_PATH = '/chiller-api';
 
+/** In production (Vercel) we use same-origin proxy so HTTPS works (no mixed content). */
+const PRODUCTION_PROXY_PATH = '/api/chiller-predict';
+
 /**
- * Returns the chiller prediction API base URL (no trailing slash).
- * In development we use the proxy path by default so requests go via the dev server to EC2 (no direct browser→EC2).
- * Set VITE_CHILLER_API_URL= (empty) to use Supabase for temperatures instead.
+ * Returns the chiller API base URL or proxy path.
+ * - Dev: Vite proxy /chiller-api (forwards to EC2).
+ * - Production: same-origin /api/chiller-predict (Vercel serverless forwards to EC2).
  */
 export function getChillerApiUrl(): string | null {
   const isDev = import.meta.env.DEV;
@@ -35,9 +38,10 @@ export function getChillerApiUrl(): string | null {
   if (isDev && !forceDirect) return PROXY_PATH;
 
   const raw = import.meta.env.VITE_CHILLER_API_URL ?? import.meta.env.VITE_CHILLER_PREDICTION_API_URL;
-  const url = raw === undefined ? DEFAULT_CHILLER_API_URL : (typeof raw === 'string' ? raw.trim() : '');
-  const base = typeof url === 'string' ? url : '';
-  return base.length > 0 ? base.replace(/\/$/, '') : null;
+  if (raw !== undefined && typeof raw === 'string' && raw.trim().length > 0) {
+    return raw.trim().replace(/\/$/, '');
+  }
+  return PRODUCTION_PROXY_PATH;
 }
 
 /**
@@ -48,7 +52,7 @@ export async function fetchChillerPrediction(
   baseUrl: string,
   params: ChillerPredictParams
 ): Promise<ChillerPredictResult> {
-  const url = `${baseUrl}/predict`;
+  const url = baseUrl === '/api/chiller-predict' ? baseUrl : `${baseUrl.replace(/\/$/, '')}/predict`;
   const body = {
     Windspeed: params.windSpeed,
     CFM: params.cfm,

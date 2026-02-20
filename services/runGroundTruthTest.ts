@@ -35,7 +35,7 @@ export type GroundTruthTestOutput = {
 };
 
 async function callPredict(baseUrl: string, body: Record<string, number>): Promise<Record<string, number>> {
-  const url = `${baseUrl.replace(/\/$/, '')}/predict`;
+  const url = baseUrl === '/api/chiller-predict' ? baseUrl : `${baseUrl.replace(/\/$/, '')}/predict`;
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

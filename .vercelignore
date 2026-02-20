@@ -1,6 +1,7 @@
-# Don't deploy the Python chiller API to Vercel (it uses PyTorch ~7GB).
-# The app calls the API on AWS EC2 instead.
-api/
+# Don't deploy the Python chiller API (PyTorch ~7GB). Only api/chiller-predict.js is deployed (proxy to EC2).
+api/main.py
+api/requirements.txt
+api/README.md
 
 # Build artifacts and caches (optional, keeps deploy lean)
 node_modules/.vite
