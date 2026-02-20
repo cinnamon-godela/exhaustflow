@@ -9,7 +9,7 @@ interface HeatmapGridProps {
     data: SimulationResult;
     inputs: SimulationInputs;
     onToggleNode: (index: number) => void;
-    /** When true, cells are read-only (no toggle); used for fixed 4×5 array. */
+    /** When true, cells are read-only (no toggle); used for fixed 5×4 array. */
     layoutLocked?: boolean;
     /** Display temperatures in °F or K */
     tempUnit?: 'F' | 'K';

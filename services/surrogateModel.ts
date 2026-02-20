@@ -13,10 +13,11 @@ import { SimulationInputs, SimulationResult, ChillerNode, ChillerSpecs, Capacity
  * --- DB TEMPERATURE → GRID CELL MAPPING ---
  * Each dataset row has: [wind_speed, flow_rate, orientation, spacing, T0, T1, ..., T19].
  * The 20 temperatures are in ROW-MAJOR order for a 4×5 grid:
- *   - Indices 0–4:  row 0 (top),    columns 0–4 left to right
- *   - Indices 5–9:  row 1,          columns 0–4
- *   - Indices 10–14: row 2,         columns 0–4
- *   - Indices 15–19: row 3 (bottom), columns 0–4
+ *   - Indices 0–3:   row 0 (top),    columns 0–3 left to right
+ *   - Indices 4–7:   row 1,          columns 0–3
+ *   - Indices 8–11:  row 2,          columns 0–3
+ *   - Indices 12–15: row 3,          columns 0–3
+ *   - Indices 16–19: row 4 (bottom), columns 0–3
  * So: grid cell (row, col) uses DB temperature at index (row * 5 + col).
  * Example: cell at row 2, col 3 uses closestRow[DATA_START_INDEX + 2*5+3] = T13.
  */

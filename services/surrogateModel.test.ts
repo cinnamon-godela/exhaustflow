@@ -24,8 +24,8 @@ function inputsFromRow(row: number[]): SimulationInputs {
   const orientation = row[2];
   const rowSpacing = row[3];
   return {
-    rows: 4,
-    columns: 5,
+    rows: 5,
+    columns: 4,
     rowSpacing,
     colSpacing: 8,
     windSpeed,

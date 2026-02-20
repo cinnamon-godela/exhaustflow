@@ -21,9 +21,11 @@ interface ControlsProps {
     loadByIdError?: string | null;
     /** Clear the "viewing by ID" override when user edits the four inputs */
     onClearOverride?: () => void;
+    /** Run/record ID the current results are mapped to (shown when using Quick Input) */
+    matchedRunId?: string | number | null;
 }
 
-const Controls: React.FC<ControlsProps> = ({ inputs, chillerSpecs, onChange, onSpecsChange, onResetLayout, onOpenHistory, fixedArrayRows, fixedArrayCols, inputRanges, onLoadById, isLoadingById, loadByIdError, onClearOverride }) => {
+const Controls: React.FC<ControlsProps> = ({ inputs, chillerSpecs, onChange, onSpecsChange, onResetLayout, onOpenHistory, fixedArrayRows, fixedArrayCols, inputRanges, onLoadById, isLoadingById, loadByIdError, onClearOverride, matchedRunId }) => {
     
     const [isSpecsExpanded, setIsSpecsExpanded] = useState(false);
     const [isGeometryExpanded, setIsGeometryExpanded] = useState(false);
@@ -355,6 +357,12 @@ const Controls: React.FC<ControlsProps> = ({ inputs, chillerSpecs, onChange, onS
                                 >
                                     Simulate
                                 </button>
+                                {matchedRunId != null && (
+                                    <div className="pt-2 border-t border-zinc-800/80">
+                                        <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Results from run ID </span>
+                                        <span className="text-[10px] font-mono text-zinc-300 font-medium">{matchedRunId}</span>
+                                    </div>
+                                )}
                             </form>
                         </div>
                     )}
@@ -494,7 +502,7 @@ const Controls: React.FC<ControlsProps> = ({ inputs, chillerSpecs, onChange, onS
 
                     {isGeometryExpanded && (
                         <div className="animate-in slide-in-from-top-2 fade-in duration-200 space-y-1">
-                            {/* Fixed 4×5 array — read-only */}
+                            {/* Fixed 5×4 array — read-only */}
                             <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/30">
                                 <div className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide flex items-center gap-2">
                                     <Grid3X3 size={12} className="text-zinc-600" /> Chiller Array
@@ -602,7 +610,7 @@ const Controls: React.FC<ControlsProps> = ({ inputs, chillerSpecs, onChange, onS
                 </div>
             </div>
 
-            {/* Footer Actions — Reset greyed out (fixed 4×5 array) */}
+            {/* Footer Actions — Reset greyed out (fixed 5×4 array) */}
             <div className="p-4 border-t border-[#27272a] bg-[#18181b]">
                 <button 
                     disabled

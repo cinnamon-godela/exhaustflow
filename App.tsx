@@ -1,8 +1,9 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { SimulationInputs, ChillerSpecs } from './types';
 import { calculateSimulation } from './services/surrogateModel';
 import { CHILLER_DATASET } from './services/chillerData'; 
 import { fetchBaselineDataset, fetchBaselineRowById } from './services/supabase';
+import { getChillerApiUrl, fetchChillerPrediction } from './services/chillerApi';
 import { getInputRanges, clamp } from './services/datasetRanges'; 
 import Controls from './components/Controls';
 import HeatmapGrid from './components/HeatmapGrid';
@@ -14,11 +15,23 @@ import { Grid, Layers, Box, Database, Loader2 } from 'lucide-react';
 
 type ViewMode = 'heatmap' | 'cutplane' | '3d';
 
+/** Placeholder row (ambient temps in K) when API is configured but no response yet — ensures we never show DB data. */
+function buildPlaceholderRow(inputs: SimulationInputs): number[] {
+    const ambientK = (inputs.ambientTemp - 32) * (5 / 9) + 273.15;
+    return [
+        inputs.windSpeed,
+        inputs.flowRate * 1000,
+        inputs.windDirection,
+        inputs.rowSpacing,
+        ...Array(20).fill(ambientK),
+    ];
+}
+
 const App: React.FC = () => {
     
-    // Fixed 4×5 chiller array (driven by Supabase baseline data)
-    const FIXED_ROWS = 4;
-    const FIXED_COLS = 5;
+    // Fixed 5×4 chiller array (driven by Supabase baseline data)
+    const FIXED_ROWS = 5;
+    const FIXED_COLS = 4;
 
     const [inputs, setInputs] = useState<SimulationInputs>({
         rows: FIXED_ROWS,
@@ -40,10 +53,10 @@ const App: React.FC = () => {
         ratedEnteringTemp: 95,  // F
         deratingSlope: 1.5,     // % per F
         lockoutTemp: 127,       // F
-        designLoad: (FIXED_ROWS * FIXED_COLS - 1) * 500 // N+1 for 4×5
+        designLoad: (FIXED_ROWS * FIXED_COLS - 1) * 500 // N+1 for 5×4
     });
 
-    // Design load fixed for 4×5 array (N+1)
+    // Design load fixed for 5×4 array (N+1)
     useEffect(() => {
         const totalChillers = FIXED_ROWS * FIXED_COLS;
         const nPlusOneLoad = (totalChillers - 1) * chillerSpecs.ratedCapacity;
@@ -71,6 +84,14 @@ const App: React.FC = () => {
     const [loadByIdError, setLoadByIdError] = useState<string | null>(null);
     const [isLoadingById, setIsLoadingById] = useState(false);
 
+    // Prediction API (replaces database lookup when VITE_CHILLER_API_URL is set)
+    const chillerApiUrl = getChillerApiUrl();
+    const [useDatabaseFallback, setUseDatabaseFallback] = useState(false);
+    const effectiveChillerApiUrl = chillerApiUrl && !useDatabaseFallback ? chillerApiUrl : null;
+    const [apiRow, setApiRow] = useState<number[] | null>(null);
+    const [apiLoading, setApiLoading] = useState(false);
+    const [apiError, setApiError] = useState<string | null>(null);
+
     const loadFromSupabase = React.useCallback(async () => {
         setDatasetError(null);
         setIsFetchingData(true);
@@ -90,12 +111,45 @@ const App: React.FC = () => {
         }
     }, []);
 
-    // Fetch from Supabase on mount — this is the true link to the database
+    // Fetch from Supabase when using database (no API URL, or user chose "Use database instead" after API failure)
     useEffect(() => {
+        if (effectiveChillerApiUrl) return;
         loadFromSupabase();
-    }, [loadFromSupabase]);
+    }, [effectiveChillerApiUrl, loadFromSupabase]);
 
-    // Keep layout fixed at 4×5 (20 cells, all on)
+    // When chiller API is set and not overridden, the four inputs drive the chiller prediction API.
+    const apiDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(() => {
+        if (!effectiveChillerApiUrl) {
+            setApiRow(null);
+            setApiError(null);
+            return;
+        }
+        if (apiDebounceRef.current) clearTimeout(apiDebounceRef.current);
+        apiDebounceRef.current = setTimeout(async () => {
+            setApiLoading(true);
+            setApiError(null);
+            const result = await fetchChillerPrediction(effectiveChillerApiUrl, {
+                windSpeed: inputs.windSpeed,
+                cfm: inputs.flowRate * 1000,
+                orientation: inputs.windDirection,
+                spacing: inputs.rowSpacing,
+            });
+            setApiLoading(false);
+            if (result.ok) {
+                setApiRow(result.row);
+            } else {
+                setApiRow(null);
+                setApiError(result.error);
+            }
+            apiDebounceRef.current = null;
+        }, 300);
+        return () => {
+            if (apiDebounceRef.current) clearTimeout(apiDebounceRef.current);
+        };
+    }, [effectiveChillerApiUrl, inputs.windSpeed, inputs.flowRate, inputs.windDirection, inputs.rowSpacing]);
+
+    // Keep layout fixed at 5×4 (20 cells, all on)
     const layoutSize = FIXED_ROWS * FIXED_COLS;
     useEffect(() => {
         if (inputs.layout.length !== layoutSize) {
@@ -122,13 +176,17 @@ const App: React.FC = () => {
         calculateSimulation(inputs, dataset, chillerSpecs), 
     [inputs, dataset, chillerSpecs]);
 
-    // When viewing a specific ID, show that row's result and reverse-populated inputs
+    // When chiller API is active, results come only from API. Otherwise override row or dataset.
     const displayResults = useMemo(() => {
+        if (effectiveChillerApiUrl) {
+            const row = apiRow ?? buildPlaceholderRow(inputs);
+            return calculateSimulation(inputs, [row], chillerSpecs);
+        }
         if (overrideRow != null) {
             return calculateSimulation(inputs, [overrideRow], chillerSpecs);
         }
         return results;
-    }, [inputs, overrideRow, results, chillerSpecs]);
+    }, [effectiveChillerApiUrl, apiRow, inputs, overrideRow, results, chillerSpecs]);
 
     const handleLoadById = React.useCallback(async (id: string | number) => {
         setLoadByIdError(null);
@@ -161,12 +219,24 @@ const App: React.FC = () => {
     // Comparison Simulation (What happens if we toggle EFT?)
     const comparisonResults = useMemo(() => {
         const compInputs = { ...inputs, eftBase: !inputs.eftBase };
-        const data = overrideRow != null ? [overrideRow] : dataset;
+        const data = effectiveChillerApiUrl
+            ? [apiRow ?? buildPlaceholderRow(inputs)]
+            : overrideRow != null
+                ? [overrideRow]
+                : dataset;
         return calculateSimulation(compInputs, data, chillerSpecs);
-    }, [inputs, dataset, overrideRow, chillerSpecs]);
+    }, [effectiveChillerApiUrl, apiRow, inputs, dataset, overrideRow, chillerSpecs]);
 
+    // Which run/record ID the current results map to (for Quick Input and header)
+    const matchedRunId = useMemo(() => {
+        if (effectiveChillerApiUrl) return 'API';
+        if (overrideId != null) return overrideId;
+        if (displayResults.matchedRowIndex < 0) return null;
+        if (datasetRowIds && displayResults.matchedRowIndex < datasetRowIds.length) return datasetRowIds[displayResults.matchedRowIndex];
+        return `Row ${displayResults.matchedRowIndex + 1}`;
+    }, [effectiveChillerApiUrl, overrideId, datasetRowIds, displayResults.matchedRowIndex]);
 
-    // Layout is fixed 4×5; toggles disabled
+    // Layout is fixed 5×4; toggles disabled
     const handleToggleNode = (_index: number) => { /* no-op: layout locked */ };
 
     const handleResetLayout = () => {
@@ -184,7 +254,7 @@ const App: React.FC = () => {
                 isOpen={historyOpen} 
                 onClose={() => setHistoryOpen(false)}
                 currentInputs={inputs}
-                currentResults={results}
+                currentResults={displayResults}
                 onLoad={handleLoadSimulation}
             />
 
@@ -200,10 +270,11 @@ const App: React.FC = () => {
                     fixedArrayRows={FIXED_ROWS}
                     fixedArrayCols={FIXED_COLS}
                     inputRanges={inputRanges ?? undefined}
-                    onLoadById={handleLoadById}
+                    onLoadById={effectiveChillerApiUrl ? undefined : handleLoadById}
                     isLoadingById={isLoadingById}
                     loadByIdError={loadByIdError}
                     onClearOverride={handleClearOverride}
+                    matchedRunId={matchedRunId}
                 />
             </div>
 
@@ -240,19 +311,35 @@ const App: React.FC = () => {
                         </button>
                     </div>
                     <div className="flex items-center gap-3">
-                        {/* Data source status (no explicit DB/source name) */}
-                        <div className={`flex items-center gap-2 px-2 py-1 rounded border ${datasetSource === 'Supabase' ? 'bg-emerald-950/20 border-emerald-900/50' : 'bg-zinc-800/50 border-zinc-700'}`}>
-                            {isFetchingData ? (
+                        {/* Data source status: API when configured, else Supabase/Local */}
+                        <div className={`flex items-center gap-2 px-2 py-1 rounded border ${
+                            effectiveChillerApiUrl && apiRow != null ? 'bg-violet-950/20 border-violet-900/50' 
+                            : datasetSource === 'Supabase' ? 'bg-emerald-950/20 border-emerald-900/50' 
+                            : 'bg-zinc-800/50 border-zinc-700'
+                        }`}>
+                            {effectiveChillerApiUrl ? (
+                                apiLoading ? (
+                                    <Loader2 size={10} className="animate-spin text-violet-400"/>
+                                ) : (
+                                    <Database size={10} className={apiRow != null ? 'text-violet-500' : 'text-zinc-500'} />
+                                )
+                            ) : isFetchingData ? (
                                 <Loader2 size={10} className="animate-spin text-zinc-500"/>
                             ) : (
                                 <Database size={10} className={datasetSource === 'Supabase' ? 'text-emerald-500' : 'text-zinc-500'} />
                             )}
-                            <span className={`text-[9px] font-bold uppercase tracking-wider ${datasetSource === 'Supabase' ? 'text-emerald-400' : 'text-zinc-500'}`}>
-                                {isFetchingData ? 'Loading…' : datasetSource === 'Supabase' 
-                                    ? `Ready${datasetRowCount != null ? ` (${datasetRowCount})` : ''}` 
-                                    : 'Offline'}
+                            <span className={`text-[9px] font-bold uppercase tracking-wider ${
+                                effectiveChillerApiUrl && apiRow != null ? 'text-violet-400' 
+                                : datasetSource === 'Supabase' ? 'text-emerald-400' 
+                                : 'text-zinc-500'
+                            }`}>
+                                {effectiveChillerApiUrl 
+                                    ? (apiLoading ? 'Loading…' : apiRow != null ? 'API' : apiError ? 'API error' : '…')
+                                    : isFetchingData ? 'Loading…' : datasetSource === 'Supabase' 
+                                        ? `Ready${datasetRowCount != null ? ` (${datasetRowCount})` : ''}` 
+                                        : 'Offline'}
                             </span>
-                            {!isFetchingData && (
+                            {!effectiveChillerApiUrl && !isFetchingData && (
                                 <button
                                     type="button"
                                     onClick={loadFromSupabase}
@@ -263,9 +350,26 @@ const App: React.FC = () => {
                                 </button>
                             )}
                         </div>
-                        {datasetError && (
-                            <div className="max-w-xs px-2 py-1 rounded border border-amber-900/50 bg-amber-950/20" title={datasetError}>
-                                <span className="text-[9px] text-amber-400 truncate block">{datasetError}</span>
+                        {(datasetError || (chillerApiUrl && apiError)) && (
+                            <div className="max-w-md px-2 py-1.5 rounded border border-amber-900/50 bg-amber-950/20 space-y-1" title={chillerApiUrl && apiError ? apiError : datasetError ?? ''}>
+                                <span className="text-[9px] text-amber-400 block break-words">{chillerApiUrl && apiError ? apiError : datasetError}</span>
+                                {chillerApiUrl && apiError && (
+                                    <button
+                                        type="button"
+                                        onClick={() => { setUseDatabaseFallback(true); loadFromSupabase(); }}
+                                        className="text-[9px] text-amber-300 hover:text-amber-200 underline"
+                                    >
+                                        Use database instead
+                                    </button>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Run ID: which record the current results map to */}
+                        {matchedRunId != null && (
+                            <div className="px-2 py-1 rounded border border-zinc-700 bg-zinc-800/50" title="Record used for the temperatures shown">
+                                <span className="text-[9px] text-zinc-500 uppercase tracking-wider">Run ID </span>
+                                <span className="text-[9px] font-mono text-zinc-300">{matchedRunId}</span>
                             </div>
                         )}
 

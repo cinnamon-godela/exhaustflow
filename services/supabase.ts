@@ -53,10 +53,42 @@ function pickColumn(row: Record<string, unknown>, ...names: string[]): unknown {
     return undefined;
 }
 
+/** Supabase/PostgREST max rows per request (cannot change server-side). We paginate to get all rows. */
+const PAGE_SIZE = 1000;
+
+/** Build chiller column keys from first row; returns null if columns missing. */
+function getChillerKeys(first: Record<string, unknown>): string[] | null {
+    const chillerKeys: string[] = [];
+    for (let i = 1; i <= 20; i++) {
+        const label = `Chiller ${String(i).padStart(2, '0')}`;
+        const key = Object.keys(first).find((k) => norm(k) === norm(label));
+        if (key == null) return null;
+        chillerKeys.push(key);
+    }
+    return chillerKeys;
+}
+
+/** Map one raw DB row to [ws, cfm, or, sp, ...temps] and id. */
+function mapRow(
+    row: Record<string, unknown>,
+    chillerKeys: string[],
+    rowIndex: number
+): { row: number[]; id: string | number } {
+    const ws = Number(pickColumn(row, 'Windspeed', 'windspeed', 'wind_speed', 'Wind Speed') ?? 0);
+    const fr = Number(pickColumn(row, 'CFM', 'cfm', 'flow_rate', 'Flow Rate') ?? 0);
+    const or = Number(pickColumn(row, 'Wind Direction', 'wind_direction', 'orientation', 'Orientation') ?? 0);
+    const sp = Number(pickColumn(row, 'Row Spacing', 'row_spacing', 'spacing', 'Spacing') ?? 0);
+    const temps = chillerKeys.map((key) => Number(row[key] ?? 0));
+    const id = pickColumn(row, 'ID', 'id');
+    return {
+        row: [ws, fr, or, sp, ...temps],
+        id: id !== undefined && id !== null ? String(id) : rowIndex + 1
+    };
+}
+
 /**
- * Fetches the baseline dataset from Supabase (table: "Exhaust flow Data").
- * Tolerates different column names: wind_speed/Wind Speed, flow_rate/Flow Rate/CFM, etc.
- * Returns structured result so the app can show row count or error.
+ * Fetches the full baseline dataset from Supabase (table: "Exhaust flow Data") by paginating
+ * in chunks of 1000 (server max). This lets you load all rows without changing the Supabase limit.
  */
 export const fetchBaselineDataset = async (): Promise<FetchBaselineResult> => {
     if (!supabase) {
@@ -66,72 +98,74 @@ export const fetchBaselineDataset = async (): Promise<FetchBaselineResult> => {
     }
 
     try {
-        const { data, error } = await supabase
-            .from(SUPABASE_BASELINE_TABLE)
-            .select('*');
+        const allRows: number[][] = [];
+        const allIds: (string | number)[] = [];
+        let chillerKeys: string[] | null = null;
+        let offset = 0;
+        let totalFetched = 0;
 
-        if (error) {
-            console.warn('[Supabase] fetch error:', error.message, error.details);
-            return { ok: false, error: error.message };
+        while (true) {
+            const from = offset;
+            const to = offset + PAGE_SIZE - 1;
+            const { data, error } = await supabase
+                .from(SUPABASE_BASELINE_TABLE)
+                .select('*')
+                .range(from, to);
+
+            if (error) {
+                console.warn('[Supabase] fetch error:', error.message, error.details);
+                return { ok: false, error: error.message };
+            }
+
+            if (!data || data.length === 0) {
+                if (offset === 0) {
+                    console.warn('[Supabase] table is empty or no rows returned.');
+                    return { ok: false, error: 'Table is empty or no rows returned.' };
+                }
+                break;
+            }
+
+            const first = data[0] as Record<string, unknown>;
+            if (chillerKeys == null) {
+                const windSpeed = pickColumn(first, 'Windspeed', 'windspeed', 'wind_speed', 'Wind Speed');
+                const cfm = pickColumn(first, 'CFM', 'cfm', 'flow_rate', 'Flow Rate');
+                const windDir = pickColumn(first, 'Wind Direction', 'wind_direction', 'orientation', 'Orientation');
+                const rowSpacing = pickColumn(first, 'Row Spacing', 'row_spacing', 'spacing', 'Spacing');
+                chillerKeys = getChillerKeys(first);
+                if (
+                    windSpeed === undefined ||
+                    cfm === undefined ||
+                    windDir === undefined ||
+                    rowSpacing === undefined ||
+                    chillerKeys === null
+                ) {
+                    const msg = `Table missing required columns. Available: ${Object.keys(first).join(', ')}`;
+                    console.warn('[Supabase]', msg);
+                    return { ok: false, error: msg };
+                }
+            }
+
+            for (let i = 0; i < data.length; i++) {
+                const { row, id } = mapRow(data[i] as Record<string, unknown>, chillerKeys, totalFetched + i);
+                if (row.length >= 24 && !row.some(Number.isNaN)) {
+                    allRows.push(row);
+                    allIds.push(id);
+                }
+            }
+
+            totalFetched += data.length;
+            if (data.length < PAGE_SIZE) break;
+            offset += PAGE_SIZE;
         }
 
-        if (!data || data.length === 0) {
-            console.warn('[Supabase] table is empty or no rows returned.');
-            return { ok: false, error: 'Table is empty or no rows returned.' };
-        }
-
-        // Map DB columns: Windspeed, CFM, Wind Direction, Row Spacing, Chiller 01..Chiller 20
-        const first = data[0] as Record<string, unknown>;
-        const windSpeed = pickColumn(first, 'Windspeed', 'windspeed', 'wind_speed', 'Wind Speed');
-        const cfm = pickColumn(first, 'CFM', 'cfm', 'flow_rate', 'Flow Rate');
-        const windDir = pickColumn(first, 'Wind Direction', 'wind_direction', 'orientation', 'Orientation');
-        const rowSpacing = pickColumn(first, 'Row Spacing', 'row_spacing', 'spacing', 'Spacing');
-
-        const missing: string[] = [];
-        if (windSpeed === undefined) missing.push('Windspeed');
-        if (cfm === undefined) missing.push('CFM');
-        if (windDir === undefined) missing.push('Wind Direction');
-        if (rowSpacing === undefined) missing.push('Row Spacing');
-
-        // Chiller 01 .. Chiller 20 (20 separate columns; temps in Kelvin)
-        const chillerKeys: string[] = [];
-        for (let i = 1; i <= 20; i++) {
-            const label = `Chiller ${String(i).padStart(2, '0')}`;
-            const key = Object.keys(first).find((k) => norm(k) === norm(label));
-            if (key != null) chillerKeys.push(key);
-            else missing.push(label);
-        }
-
-        if (missing.length > 0) {
-            const msg = `Table missing columns: ${missing.join(', ')}. Available: ${Object.keys(first).join(', ')}`;
-            console.warn('[Supabase]', msg);
-            return { ok: false, error: msg };
-        }
-
-        const pairs = data.map((row: Record<string, unknown>, index: number) => {
-            const ws = Number(pickColumn(row, 'Windspeed', 'windspeed', 'wind_speed', 'Wind Speed') ?? 0);
-            const fr = Number(pickColumn(row, 'CFM', 'cfm', 'flow_rate', 'Flow Rate') ?? 0);
-            const or = Number(pickColumn(row, 'Wind Direction', 'wind_direction', 'orientation', 'Orientation') ?? 0);
-            const sp = Number(pickColumn(row, 'Row Spacing', 'row_spacing', 'spacing', 'Spacing') ?? 0);
-            const temps = chillerKeys.map((key) => Number(row[key] ?? 0));
-            const id = pickColumn(row, 'ID', 'id');
-            return {
-                row: [ws, fr, or, sp, ...temps] as number[],
-                id: id !== undefined && id !== null ? String(id) : index + 1
-            };
-        });
-
-        const validPairs = pairs.filter((p) => p.row.length >= 5 && !p.row.some(isNaN));
-        if (validPairs.length === 0) {
+        if (allRows.length === 0) {
             const msg = 'No valid rows (need wind_speed, flow_rate, orientation, spacing, temperatures with 20 temps).';
             console.warn('[Supabase]', msg);
             return { ok: false, error: msg };
         }
 
-        const validRows = validPairs.map((p) => p.row);
-        const rowIds = validPairs.map((p) => p.id);
-        console.info('[Supabase] Loaded', validRows.length, 'rows from "Exhaust flow Data".');
-        return { ok: true, data: validRows, rowCount: validRows.length, rowIds };
+        console.info('[Supabase] Loaded', allRows.length, 'rows from "Exhaust flow Data".');
+        return { ok: true, data: allRows, rowCount: allRows.length, rowIds: allIds };
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error('[Supabase] Unexpected error:', err);
