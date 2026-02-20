@@ -308,8 +308,8 @@ const CutPlaneView: React.FC<CutPlaneViewProps> = ({ data, inputs }) => {
                     <div className="text-[10px] text-slate-300 font-bold mb-1">TEMPERATURE FIELD</div>
                     <div className="w-32 h-2 rounded-sm mb-1" style={{background: 'linear-gradient(to right, #0000ff, #00ffff, #00ff00, #ffff00, #ff0000)'}}></div>
                     <div className="flex justify-between text-[9px] text-slate-400 font-mono">
-                        <span>{inputs.ambientTemp}°C</span>
-                        <span>{(inputs.ambientTemp + 15).toFixed(0)}°C</span>
+                        <span>{inputs.ambientTemp}°F</span>
+                        <span>{(inputs.ambientTemp + 30).toFixed(0)}°F</span>
                     </div>
                 </div>
             </div>

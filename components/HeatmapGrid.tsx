@@ -10,19 +10,18 @@ interface HeatmapGridProps {
 
 const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode }) => {
     
-    // C to F helper
-    const toF = (c: number) => (c * 9/5) + 32;
-
+    // RELATIVE COLOR SCALE
     const getThermalColor = (tempF: number) => {
+        const base = inputs.ambientTemp;
         const stops: [number, number, number, number][] = [
-            [104.0, 0, 0, 100],   // Dark Blue
-            [106.0, 0, 0, 255],   // Blue
-            [110.0, 0, 255, 255], // Cyan
-            [113.0, 0, 255, 0],   // Green
-            [116.0, 255, 255, 0], // Yellow
-            [119.0, 255, 140, 0], // Orange
-            [122.0, 255, 0, 0],   // Red
-            [125.0, 100, 0, 0]    // Dark Red
+            [base + 0, 0, 0, 100],      
+            [base + 2, 0, 0, 255],      
+            [base + 5, 0, 255, 255],    
+            [base + 8, 0, 255, 0],      
+            [base + 12, 255, 255, 0],   
+            [base + 18, 255, 140, 0],   
+            [base + 25, 255, 0, 0],     
+            [base + 35, 100, 0, 0]      
         ];
 
         let lower = stops[0];
@@ -48,21 +47,14 @@ const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode })
     };
 
     const getTextColor = (tempF: number) => {
-        if (tempF < 108) return 'text-white/90';
-        if (tempF > 118) return 'text-white/90';
+        const rise = tempF - inputs.ambientTemp;
+        if (rise < 4 || rise > 15) return 'text-white/90';
         return 'text-black/80';
     };
 
     const flowRotation = inputs.windDirection;
-    
-    // Convert physics spacing to pixel gap for visualization
-    // Scaling: ~3px per foot allows for visible differentiation without consuming too much space
     const colGapPx = Math.max(inputs.colSpacing * 3, 10);
     const rowGapPx = Math.max(inputs.rowSpacing * 3, 10);
-
-    // Dynamic padding: Percentage of lateral spacing (colSpacing)
-    // We set a safe minimum (80px) to accommodate the "Row Index" label
-    // And scale up as the grid spaces out to preserve visual balance
     const containerPaddingPx = Math.max(inputs.colSpacing * 4, 80);
 
     return (
@@ -94,7 +86,6 @@ const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode })
                 className="relative bg-[#18181b] rounded-xl border border-[#27272a] shadow-2xl transition-all max-w-full max-h-full overflow-auto"
                 style={{ padding: `${containerPaddingPx}px` }}
             >
-                
                 {/* Labels */}
                 <div className="absolute left-6 top-1/2 -translate-y-1/2 -rotate-90 text-[10px] text-zinc-600 font-bold tracking-[0.2em] uppercase whitespace-nowrap">
                     Row Index
@@ -110,7 +101,7 @@ const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode })
                     }}
                 >
                     {data.grid.map((node) => {
-                        const tempF = toF(node.totalTemp);
+                        const tempF = node.totalTemp;
                         return (
                             <div key={node.id} className="relative flex flex-col items-center group">
                                 <button
@@ -119,11 +110,12 @@ const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode })
                                         w-24 h-8 md:w-32 md:h-10 lg:w-40 lg:h-12
                                         transition-all duration-300
                                         flex flex-col items-center justify-center 
-                                        relative rounded-sm
+                                        relative rounded-sm overflow-hidden
                                         ${node.isActive 
-                                            ? `shadow-lg hover:scale-105 hover:z-10 border border-black/10 ${node.isMax ? 'ring-2 ring-white z-10 shadow-red-500/20' : ''}` 
+                                            ? 'shadow-lg hover:scale-105 hover:z-10 border border-black/10' 
                                             : 'border border-dashed border-zinc-700 bg-zinc-900/30 hover:bg-zinc-800/50'
                                         }
+                                        ${node.status === 'LockedOut' ? 'ring-2 ring-red-500 ring-offset-2 ring-offset-black' : ''}
                                     `}
                                     style={{ 
                                         backgroundColor: node.isActive ? getThermalColor(tempF) : undefined 
@@ -131,9 +123,17 @@ const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode })
                                 >
                                     {node.isActive ? (
                                         <>
-                                            <span className={`text-xs md:text-sm font-bold drop-shadow-sm font-mono ${getTextColor(tempF)}`}>
+                                            <span className={`text-xs md:text-sm font-bold drop-shadow-sm font-mono relative z-10 ${getTextColor(tempF)}`}>
                                                 {tempF.toFixed(1)} °F
                                             </span>
+                                            
+                                            {/* Locked Out Overlay */}
+                                            {node.status === 'LockedOut' && (
+                                                <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-0">
+                                                    <div className="w-full h-[1px] bg-red-500 absolute rotate-45" />
+                                                    <div className="w-full h-[1px] bg-red-500 absolute -rotate-45" />
+                                                </div>
+                                            )}
                                         </>
                                     ) : (
                                         <span className="text-[9px] font-bold text-zinc-700 uppercase tracking-widest pointer-events-none">
@@ -147,16 +147,15 @@ const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode })
                 </div>
             </div>
 
-            {/* Legend - Updated to match new scale */}
+            {/* Legend - Dynamic based on Ambient */}
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 bg-zinc-900/90 backdrop-blur px-5 py-3 rounded-xl border border-zinc-700 shadow-2xl z-20">
-                <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-wider">Average Intake Temperature (°F)</span>
+                <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-wider">Intake Temperature (°F)</span>
                 <div className="flex items-center gap-3">
-                    <span className="text-[10px] text-zinc-400 font-mono">105</span>
-                    {/* Gradient matching stops: DarkBlue, Blue, Cyan, Green, Yellow, Orange, Red, DarkRed */}
+                    <span className="text-[10px] text-zinc-400 font-mono">{inputs.ambientTemp}</span>
                     <div className="w-64 h-4 rounded-sm border border-white/10" 
-                         style={{ background: 'linear-gradient(to right, #000064, #0000ff, #00ffff, #00ff00, #ffff00, #ff8c00, #ff0000, #640000)' }}>
+                         style={{ background: 'linear-gradient(to right, #000064, #0000ff, #00ffff, #00ff00, #ffff00, #ff8c00, #ff0000)' }}>
                     </div>
-                    <span className="text-[10px] text-zinc-400 font-mono">123+</span>
+                    <span className="text-[10px] text-zinc-400 font-mono">{inputs.ambientTemp + 25}+</span>
                 </div>
             </div>
             

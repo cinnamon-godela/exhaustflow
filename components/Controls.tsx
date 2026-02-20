@@ -1,36 +1,54 @@
 import React, { useEffect, useState } from 'react';
-import { SimulationInputs } from '../types';
-import { Wind, Thermometer, ArrowUpRight, Ruler, Grid3X3, Sun, Activity, Settings2, ShieldCheck, Fan, LayoutGrid, Maximize } from 'lucide-react';
+import { SimulationInputs, ChillerSpecs } from '../types';
+import { Wind, Thermometer, ArrowUpRight, Grid3X3, Sun, Activity, Settings2, ShieldCheck, Fan, LayoutGrid, Maximize, Database, Cpu, ChevronDown, ChevronRight } from 'lucide-react';
 
 interface ControlsProps {
     inputs: SimulationInputs;
+    chillerSpecs: ChillerSpecs;
     onChange: (newInputs: SimulationInputs) => void;
+    onSpecsChange: (newSpecs: ChillerSpecs) => void;
     onResetLayout: () => void;
+    onOpenHistory: () => void;
 }
 
-const Controls: React.FC<ControlsProps> = ({ inputs, onChange, onResetLayout }) => {
+const Controls: React.FC<ControlsProps> = ({ inputs, chillerSpecs, onChange, onSpecsChange, onResetLayout, onOpenHistory }) => {
     
+    const [isSpecsExpanded, setIsSpecsExpanded] = useState(false);
+    const [isGeometryExpanded, setIsGeometryExpanded] = useState(false);
+    const [isEnvExpanded, setIsEnvExpanded] = useState(false);
+
     const handleChange = (key: keyof SimulationInputs, value: number | boolean) => {
         onChange({ ...inputs, [key]: value });
     };
 
+    const handleSpecChange = (key: keyof ChillerSpecs, value: number) => {
+        onSpecsChange({ ...chillerSpecs, [key]: value });
+    };
+
     const ControlRow = ({ 
-        label, icon: Icon, value, min, max, step, unit, field 
+        label, icon: Icon, value, min, max, step, unit, onChangeVal 
     }: { 
-        label: string, icon: any, value: number, min: number, max: number, step: number, unit: string, field: keyof SimulationInputs 
+        label: string, icon: any, value: number, min: number, max: number, step: number, unit: string, onChangeVal: (val: number) => void 
     }) => {
         const [localValue, setLocalValue] = useState(value.toString());
+        const [isDragging, setIsDragging] = useState(false);
 
         useEffect(() => {
-            setLocalValue(value.toString());
-        }, [value]);
+            if (!isDragging) {
+                setLocalValue(value.toString());
+            }
+        }, [value, isDragging]);
 
-        const handleBlur = () => {
-            let val = parseFloat(localValue);
+        const commitChange = (valStr: string) => {
+            let val = parseFloat(valStr);
             if (isNaN(val)) val = min;
             val = Math.min(Math.max(val, min), max);
-            handleChange(field, val);
-            setLocalValue(val.toString());
+            onChangeVal(val);
+        };
+
+        const handleBlur = () => {
+            setIsDragging(false);
+            commitChange(localValue);
         };
 
         const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -41,9 +59,13 @@ const Controls: React.FC<ControlsProps> = ({ inputs, onChange, onResetLayout }) 
         };
 
         const onSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-            const newVal = parseFloat(e.target.value);
-            setLocalValue(newVal.toString());
-            handleChange(field, newVal);
+            setLocalValue(e.target.value);
+            setIsDragging(true);
+        };
+
+        const onSliderRelease = () => {
+            setIsDragging(false);
+            commitChange(localValue);
         };
 
         return (
@@ -65,32 +87,17 @@ const Controls: React.FC<ControlsProps> = ({ inputs, onChange, onResetLayout }) 
                     </div>
                 </div>
                 
-                {/* Slider */}
                 <div className="h-6 flex items-center relative">
                     <input
                         type="range"
                         min={min}
                         max={max}
                         step={step}
-                        value={typeof value === 'number' ? value : min}
+                        value={localValue}
                         onChange={onSliderChange}
-                        className="
-                            w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer
-                            focus:outline-none focus:ring-1 focus:ring-blue-500/30
-                            [&::-webkit-slider-thumb]:appearance-none
-                            [&::-webkit-slider-thumb]:w-4
-                            [&::-webkit-slider-thumb]:h-4
-                            [&::-webkit-slider-thumb]:rounded-full
-                            [&::-webkit-slider-thumb]:bg-zinc-300
-                            [&::-webkit-slider-thumb]:border-2
-                            [&::-webkit-slider-thumb]:border-[#18181b]
-                            [&::-webkit-slider-thumb]:shadow-lg
-                            [&::-webkit-slider-thumb]:transition-transform
-                            hover:[&::-webkit-slider-thumb]:scale-110
-                            hover:[&::-webkit-slider-thumb]:bg-white
-                            active:[&::-webkit-slider-thumb]:scale-110
-                            active:[&::-webkit-slider-thumb]:bg-blue-400
-                        "
+                        onPointerUp={onSliderRelease}
+                        onTouchEnd={onSliderRelease}
+                        className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500/30 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-zinc-300 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-[#18181b] [&::-webkit-slider-thumb]:shadow-lg [&::-webkit-slider-thumb]:transition-transform hover:[&::-webkit-slider-thumb]:scale-110 hover:[&::-webkit-slider-thumb]:bg-white active:[&::-webkit-slider-thumb]:scale-110 active:[&::-webkit-slider-thumb]:bg-blue-400"
                     />
                 </div>
             </div>
@@ -102,7 +109,6 @@ const Controls: React.FC<ControlsProps> = ({ inputs, onChange, onResetLayout }) 
             {/* BRANDING HEADER */}
             <div className="pt-5 pb-3 px-5 border-b border-[#27272a] bg-[#18181b] flex flex-col">
                 <div className="flex items-start gap-2.5">
-                    {/* Logo */}
                      <div className="mt-1 relative w-8 h-8 flex-shrink-0 text-[#0070f3]">
                         <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
                              <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 13.5997 2.37562 15.1116 3.04346 16.4525" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
@@ -120,9 +126,18 @@ const Controls: React.FC<ControlsProps> = ({ inputs, onChange, onResetLayout }) 
             </div>
 
             {/* Sub Header */}
-            <div className="h-8 min-h-[32px] flex items-center gap-2 px-6 border-b border-[#27272a] bg-[#1a1a1e]">
-                <Settings2 size={12} className="text-zinc-600" />
-                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Model Configuration</span>
+            <div className="h-8 min-h-[32px] flex items-center justify-between px-6 border-b border-[#27272a] bg-[#1a1a1e]">
+                <div className="flex items-center gap-2">
+                    <Settings2 size={12} className="text-zinc-600" />
+                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Model Config</span>
+                </div>
+                <button 
+                    onClick={onOpenHistory}
+                    className="text-zinc-500 hover:text-blue-400 transition-colors p-1"
+                    title="Load/Save History"
+                >
+                    <Database size={14} />
+                </button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-8 scrollbar-thin">
@@ -161,7 +176,15 @@ const Controls: React.FC<ControlsProps> = ({ inputs, onChange, onResetLayout }) 
                             </div>
                         </div>
                         <p className="text-[10px] text-zinc-500 leading-relaxed">
-                            Vertical discharge base reduction strategy.
+                            Vertical discharge technology.
+                            <br/>
+                            <span className={inputs.eftBase ? "text-emerald-500/80 font-medium" : ""}>
+                                • Maximizes Flow Uniformity
+                            </span>
+                            <br/>
+                            <span className={inputs.eftBase ? "text-emerald-500/80 font-medium" : ""}>
+                                • Increases Capacity (up to 25%)
+                            </span>
                         </p>
                     </div>
 
@@ -199,94 +222,157 @@ const Controls: React.FC<ControlsProps> = ({ inputs, onChange, onResetLayout }) 
                     </div>
                 </div>
 
+                {/* Section: Equipment Specs (NEW) */}
+                <div className="space-y-1">
+                    <button 
+                        onClick={() => setIsSpecsExpanded(!isSpecsExpanded)}
+                        className="w-full px-3 mb-2 flex items-center justify-between group hover:bg-zinc-800/50 rounded py-1 transition-colors"
+                    >
+                        <div className="flex items-center gap-2 text-[10px] font-bold text-zinc-600 group-hover:text-zinc-400 uppercase tracking-widest transition-colors">
+                            <Cpu size={10} /> Equipment Specs
+                        </div>
+                        {isSpecsExpanded 
+                            ? <ChevronDown size={12} className="text-zinc-600 group-hover:text-zinc-400" /> 
+                            : <ChevronRight size={12} className="text-zinc-600 group-hover:text-zinc-400" />
+                        }
+                    </button>
+
+                    {isSpecsExpanded && (
+                        <div className="animate-in slide-in-from-top-2 fade-in duration-200">
+                            <ControlRow 
+                                label="Chiller Airflow" 
+                                icon={Fan} 
+                                value={inputs.flowRate} 
+                                min={50} max={300} step={10} 
+                                unit="kCFM" 
+                                onChangeVal={(v) => handleChange('flowRate', v)}
+                            />
+                            <ControlRow 
+                                label="Rated Capacity" 
+                                icon={Activity} 
+                                value={chillerSpecs.ratedCapacity} 
+                                min={100} max={2000} step={50} 
+                                unit="tons" 
+                                onChangeVal={(v) => handleSpecChange('ratedCapacity', v)}
+                            />
+                             <ControlRow 
+                                label="Rated Entering Air" 
+                                icon={Thermometer} 
+                                value={chillerSpecs.ratedEnteringTemp} 
+                                min={80} max={115} step={1} 
+                                unit="°F" 
+                                onChangeVal={(v) => handleSpecChange('ratedEnteringTemp', v)}
+                            />
+                             <ControlRow 
+                                label="Design Load" 
+                                icon={Activity} 
+                                value={chillerSpecs.designLoad} 
+                                min={500} max={20000} step={100} 
+                                unit="tons" 
+                                onChangeVal={(v) => handleSpecChange('designLoad', v)}
+                            />
+                        </div>
+                    )}
+                </div>
+
                 {/* Section: Geometry */}
                 <div className="space-y-1">
-                    <div className="px-3 mb-2 flex items-center gap-2 text-[10px] font-bold text-zinc-600 uppercase tracking-widest">
-                        <LayoutGrid size={10} /> Array Geometry
-                    </div>
+                    <button 
+                        onClick={() => setIsGeometryExpanded(!isGeometryExpanded)}
+                        className="w-full px-3 mb-2 flex items-center justify-between group hover:bg-zinc-800/50 rounded py-1 transition-colors"
+                    >
+                        <div className="flex items-center gap-2 text-[10px] font-bold text-zinc-600 group-hover:text-zinc-400 uppercase tracking-widest transition-colors">
+                            <LayoutGrid size={10} /> Array Geometry
+                        </div>
+                        {isGeometryExpanded 
+                            ? <ChevronDown size={12} className="text-zinc-600 group-hover:text-zinc-400" /> 
+                            : <ChevronRight size={12} className="text-zinc-600 group-hover:text-zinc-400" />
+                        }
+                    </button>
 
-                    <ControlRow 
-                        label="Rows (Height)" 
-                        icon={Grid3X3} 
-                        value={inputs.rows} 
-                        min={1} max={10} step={1} 
-                        unit="qty" 
-                        field="rows" 
-                    />
-                    <ControlRow 
-                        label="Columns (Width)" 
-                        icon={Grid3X3} 
-                        value={inputs.columns} 
-                        min={1} max={10} step={1} 
-                        unit="qty" 
-                        field="columns" 
-                    />
-                    <ControlRow 
-                        label="Row Spacing" 
-                        icon={Maximize} 
-                        value={inputs.rowSpacing} 
-                        min={5} max={50} step={0.5} 
-                        unit="ft" 
-                        field="rowSpacing" 
-                    />
-                    <ControlRow 
-                        label="Col Spacing" 
-                        icon={Maximize} 
-                        value={inputs.colSpacing} 
-                        min={5} max={50} step={0.5} 
-                        unit="ft" 
-                        field="colSpacing" 
-                    />
+                    {isGeometryExpanded && (
+                        <div className="animate-in slide-in-from-top-2 fade-in duration-200">
+                            <ControlRow 
+                                label="Rows (Height)" 
+                                icon={Grid3X3} 
+                                value={inputs.rows} 
+                                min={1} max={10} step={1} 
+                                unit="qty" 
+                                onChangeVal={(v) => handleChange('rows', v)}
+                            />
+                            <ControlRow 
+                                label="Columns (Width)" 
+                                icon={Grid3X3} 
+                                value={inputs.columns} 
+                                min={1} max={10} step={1} 
+                                unit="qty" 
+                                onChangeVal={(v) => handleChange('columns', v)}
+                            />
+                            <ControlRow 
+                                label="Row Spacing" 
+                                icon={Maximize} 
+                                value={inputs.rowSpacing} 
+                                min={5} max={50} step={0.5} 
+                                unit="ft" 
+                                onChangeVal={(v) => handleChange('rowSpacing', v)}
+                            />
+                            <ControlRow 
+                                label="Col Spacing" 
+                                icon={Maximize} 
+                                value={inputs.colSpacing} 
+                                min={5} max={50} step={0.5} 
+                                unit="ft" 
+                                onChangeVal={(v) => handleChange('colSpacing', v)}
+                            />
+                        </div>
+                    )}
                 </div>
 
                 {/* Section: Environment */}
                 <div className="space-y-1">
-                    <div className="px-3 mb-2 flex items-center gap-2 text-[10px] font-bold text-zinc-600 uppercase tracking-widest">
-                        <Sun size={10} /> Environmental
-                    </div>
-                    
-                    <ControlRow 
-                        label="Ambient Temp" 
-                        icon={Sun} 
-                        value={inputs.ambientTemp} 
-                        min={20} max={50} step={0.5} 
-                        unit="°C" 
-                        field="ambientTemp" 
-                    />
+                     <button 
+                        onClick={() => setIsEnvExpanded(!isEnvExpanded)}
+                        className="w-full px-3 mb-2 flex items-center justify-between group hover:bg-zinc-800/50 rounded py-1 transition-colors"
+                    >
+                        <div className="flex items-center gap-2 text-[10px] font-bold text-zinc-600 group-hover:text-zinc-400 uppercase tracking-widest transition-colors">
+                            <Sun size={10} /> Environmental
+                        </div>
+                        {isEnvExpanded 
+                            ? <ChevronDown size={12} className="text-zinc-600 group-hover:text-zinc-400" /> 
+                            : <ChevronRight size={12} className="text-zinc-600 group-hover:text-zinc-400" />
+                        }
+                    </button>
 
-                    <ControlRow 
-                        label="Wind Speed" 
-                        icon={Wind} 
-                        value={inputs.windSpeed} 
-                        min={0} max={20} step={0.1} 
-                        unit="m/s" 
-                        field="windSpeed" 
-                    />
+                    {isEnvExpanded && (
+                        <div className="animate-in slide-in-from-top-2 fade-in duration-200">
+                            <ControlRow 
+                                label="Ambient Temp" 
+                                icon={Sun} 
+                                value={inputs.ambientTemp} 
+                                min={60} max={120} step={1} 
+                                unit="°F" 
+                                onChangeVal={(v) => handleChange('ambientTemp', v)}
+                            />
 
-                    <ControlRow 
-                        label="Wind Direction" 
-                        icon={ArrowUpRight} 
-                        value={inputs.windDirection} 
-                        min={0} max={360} step={1} 
-                        unit="°" 
-                        field="windDirection" 
-                    />
-                </div>
+                            <ControlRow 
+                                label="Wind Speed" 
+                                icon={Wind} 
+                                value={inputs.windSpeed} 
+                                min={0} max={20} step={0.1} 
+                                unit="m/s" 
+                                onChangeVal={(v) => handleChange('windSpeed', v)}
+                            />
 
-                {/* Section: System */}
-                <div className="space-y-1">
-                    <div className="px-3 mb-2 flex items-center gap-2 text-[10px] font-bold text-zinc-600 uppercase tracking-widest">
-                        <Activity size={10} /> System Specs
-                    </div>
-
-                    <ControlRow 
-                        label="Flow Rate" 
-                        icon={Thermometer} 
-                        value={inputs.flowRate} 
-                        min={30} max={200} step={1} 
-                        unit="kCFM" 
-                        field="flowRate" 
-                    />
+                            <ControlRow 
+                                label="Wind Direction" 
+                                icon={ArrowUpRight} 
+                                value={inputs.windDirection} 
+                                min={0} max={360} step={1} 
+                                unit="°" 
+                                onChangeVal={(v) => handleChange('windDirection', v)}
+                            />
+                        </div>
+                    )}
                 </div>
             </div>
 
