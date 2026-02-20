@@ -11,7 +11,8 @@ import CutPlaneView from './components/CutPlaneView';
 import StatsPanel from './components/StatsPanel';
 import ChatInterface from './components/ChatInterface';
 import SimulationHistory from './components/SimulationHistory';
-import { Grid, Layers, Box, Database, Loader2 } from 'lucide-react';
+import GroundTruthTestPanel from './components/GroundTruthTestPanel';
+import { Grid, Layers, Box, Database, Loader2, FlaskConical } from 'lucide-react';
 
 type ViewMode = 'heatmap' | 'cutplane' | '3d';
 
@@ -68,6 +69,7 @@ const App: React.FC = () => {
 
     const [viewMode, setViewMode] = useState<ViewMode>('heatmap');
     const [historyOpen, setHistoryOpen] = useState(false);
+    const [groundTruthTestOpen, setGroundTruthTestOpen] = useState(false);
     const [tempUnit, setTempUnit] = useState<'F' | 'K'>('F');
 
     // Dataset Management — start with local; Supabase overwrites when fetch succeeds
@@ -257,6 +259,11 @@ const App: React.FC = () => {
                 currentResults={displayResults}
                 onLoad={handleLoadSimulation}
             />
+            <GroundTruthTestPanel
+                isOpen={groundTruthTestOpen}
+                onClose={() => setGroundTruthTestOpen(false)}
+                apiBaseUrl={effectiveChillerApiUrl}
+            />
 
             {/* COLUMN 1: LEFT SIDEBAR (CONTROLS) */}
             <div className="w-80 flex-shrink-0 border-r border-[#27272a] bg-[#18181b] overflow-y-auto z-20 shadow-[4px_0_24px_rgba(0,0,0,0.2)]">
@@ -365,6 +372,18 @@ const App: React.FC = () => {
                             </div>
                         )}
 
+                        {/* API ground-truth test (only when API is in use) */}
+                        {effectiveChillerApiUrl && (
+                            <button
+                                type="button"
+                                onClick={() => setGroundTruthTestOpen(true)}
+                                className="flex items-center gap-2 px-2 py-1 rounded border border-zinc-700 bg-zinc-800/50 hover:bg-zinc-700/50 text-zinc-400 hover:text-zinc-300 transition-colors"
+                                title="Run API ground-truth test and view deltas"
+                            >
+                                <FlaskConical size={12} />
+                                <span className="text-[9px] font-medium uppercase tracking-wider">API test</span>
+                            </button>
+                        )}
                         {/* Run ID: which record the current results map to */}
                         {matchedRunId != null && (
                             <div className="px-2 py-1 rounded border border-zinc-700 bg-zinc-800/50" title="Record used for the temperatures shown">
