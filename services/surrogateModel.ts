@@ -12,14 +12,11 @@ import { SimulationInputs, SimulationResult, ChillerNode, ChillerSpecs, Capacity
  *
  * --- DB TEMPERATURE → GRID CELL MAPPING ---
  * Each dataset row has: [wind_speed, flow_rate, orientation, spacing, T0, T1, ..., T19].
- * The 20 temperatures are in ROW-MAJOR order for a 4×5 grid:
- *   - Indices 0–3:   row 0 (top),    columns 0–3 left to right
- *   - Indices 4–7:   row 1,          columns 0–3
- *   - Indices 8–11:  row 2,          columns 0–3
- *   - Indices 12–15: row 3,          columns 0–3
- *   - Indices 16–19: row 4 (bottom), columns 0–3
- * So: grid cell (row, col) uses DB temperature at index (row * 5 + col).
- * Example: cell at row 2, col 3 uses closestRow[DATA_START_INDEX + 2*5+3] = T13.
+ * API/dataset order: T0..T19 in row-major (row 0: 0–3, row 1: 4–7, …, row 4: 16–19).
+ * Display reverses each row so API chiller 1 (T0) appears at col 3, chiller 4 (T3) at col 0, etc.
+ * Display is 5 rows × 4 columns. Each row is reversed so that API chiller 1 appears in the
+ * rightmost cell of row 0, chiller 4 in the leftmost, etc. So: grid cell (row, col) uses
+ * DB temperature at index (row * 4 + (3 - col)).
  */
 
 const DATA_START_INDEX = 4; // Index where chiller temps begin (row has 4 params then T0..T19)
@@ -122,19 +119,17 @@ export const calculateSimulation = (
     let totalRiseSumF = 0;
     let activeChillerCount = 0;
     const totalNodes = inputs.rows * inputs.columns;
-    const BASE_ROWS = 4;
-    const BASE_COLS = 5;
 
     // Capacity Aggregators
     let totalEffectiveCapacity = 0;
     let chillersAtRisk = 0;
     let chillersLockedOut = 0;
 
-    // Grid is fixed 4×5; cell (row, col) → DB temp index = row*5+col (row-major)
+    // Grid 5×4: each row reversed so API 1→display col 3, API 2→col 2, API 3→col 1, API 4→col 0, etc.
     for (let i = 0; i < totalNodes; i++) {
         const row = Math.floor(i / inputs.columns);
         const col = i % inputs.columns;
-        const dataIndex = (row * BASE_COLS) + col; // 0..19, matches DB T0..T19
+        const dataIndex = row * inputs.columns + (inputs.columns - 1 - col); // reverse each row
         const safeIndex = Math.min(Math.max(dataIndex, 0), DATASET_SIZE - 1);
         const rawTempK = closestRow[DATA_START_INDEX + safeIndex] ?? DATA_AMBIENT_K;
 

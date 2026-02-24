@@ -70,6 +70,13 @@ const GroundTruthTestPanel: React.FC<GroundTruthTestPanelProps> = ({
           <p className="text-xs text-zinc-500">
             Runs 87 configs (Spacing 10/15/20 ft × row profiles), calls the chiller API, and compares predictions to ground truth. Deltas are in Kelvin.
           </p>
+          <details className="text-[10px] text-zinc-500">
+            <summary className="cursor-pointer hover:text-zinc-400">Which chiller is compared to what?</summary>
+            <ul className="mt-1.5 list-disc list-inside space-y-0.5">
+              <li><strong>Test table:</strong> Chiller N = API “Chiller 0N” vs ground-truth position N (same N, 1–20). So row “Chiller 1” compares API output for chiller 1 to ground truth for chiller 1.</li>
+              <li><strong>Heatmap:</strong> The same API/ground-truth indices are shown with each row reversed: row 0 = 4,3,2,1 | row 1 = 8,7,6,5 | row 2 = 12,11,10,9 | row 3 = 16,15,14,13 | row 4 = 20,19,18,17 (left→right). So “Chiller 1” in the test is the rightmost cell of the first row on the heatmap.</li>
+            </ul>
+          </details>
           <button
             type="button"
             onClick={runTest}
