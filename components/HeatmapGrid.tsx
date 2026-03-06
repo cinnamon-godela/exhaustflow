@@ -34,26 +34,23 @@ const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode, l
         return 'text-white/95';
     };
 
-    /** * FIX: Explicitly Reversing Every Row
-     * This logic takes the flat array [1,2,3,4, 5,6,7,8...] 
-     * and turns it into [4,3,2,1, 8,7,6,5...] 
+    /** * THE FIX: Hard-reverse every row of 4 chillers.
+     * This takes [C1, C2, C3, C4, C5, C6, C7, C8...]
+     * and transforms it to [C4, C3, C2, C1, C8, C7, C6, C5...]
      */
     const displayGrid = useMemo(() => {
         if (!data.grid || data.grid.length === 0) return [];
         
-        // We force 4 columns here to match your physical layout requirements
-        const rowWidth = 4; 
-        const reordered = [];
+        const COLS = 4; // Your physical layout is 4 units wide
+        const result = [];
         
-        for (let i = 0; i < data.grid.length; i += rowWidth) {
-            // Get the 4 chillers for this row
-            const chunk = data.grid.slice(i, i + rowWidth);
-            // Reverse them: [1,2,3,4] becomes [4,3,2,1]
-            // We use spread [...chunk] to avoid mutating the original data
-            reordered.push(...[...chunk].reverse());
+        for (let i = 0; i < data.grid.length; i += COLS) {
+            // Take a row chunk (e.g., 0-3, 4-7, 8-11...)
+            const row = data.grid.slice(i, i + COLS);
+            // Reverse that specific row only
+            result.push(...[...row].reverse());
         }
-        
-        return reordered;
+        return result;
     }, [data.grid]);
 
     const flowRotation = inputs.windDirection;
@@ -93,7 +90,7 @@ const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode, l
                 className="relative bg-[#18181b] rounded-xl border border-[#27272a] shadow-2xl transition-all max-w-full max-h-full overflow-auto"
                 style={{ padding: `${containerPaddingPx}px` }}
             >
-                {/* Labels */}
+                {/* Row Label */}
                 <div className="absolute left-6 top-1/2 -translate-y-1/2 -rotate-90 text-[10px] text-zinc-600 font-bold tracking-[0.2em] uppercase whitespace-nowrap">
                     Row Index
                 </div>
@@ -102,13 +99,14 @@ const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode, l
                 <div 
                     className="grid transition-all duration-300 ease-out"
                     style={{
-                        // We use inputs.columns or fallback to 4
-                        gridTemplateColumns: `repeat(${inputs.columns || 4}, minmax(0, 1fr))`,
+                        // Ensure this matches the chunking logic (4 columns)
+                        gridTemplateColumns: `repeat(4, minmax(0, 1fr))`, 
                         columnGap: `${colGapPx}px`,
-                        rowGap: `${rowGapPx}px`
+                        rowGap: `${rowGapPx}px`,
+                        direction: 'ltr' // Explicitly Left-to-Right
                     }}
                 >
-                    {/* CRITICAL: We map through displayGrid (the reordered one) */}
+                    {/* Map through the reordered grid */}
                     {displayGrid.map((node) => {
                         const tempF = node.totalTemp;
                         const displayTemp = tempUnit === 'K' ? fToK(tempF) : tempF;
