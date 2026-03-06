@@ -82,7 +82,9 @@ const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode, l
                     style={{
                         gridTemplateColumns: `repeat(${inputs.columns}, minmax(0, 1fr))`,
                         columnGap: `${colGapPx}px`,
-                        rowGap: `${rowGapPx}px`
+                        rowGap: `${rowGapPx}px`,
+                        // FIX: Added direction rtl to start indexing from the right as per user layout
+                        direction: 'rtl'
                     }}
                 >
                     {data.grid.map((node) => {
@@ -91,7 +93,12 @@ const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode, l
                         const unitLabel = tempUnit === 'K' ? ' K' : ' °F';
                         const Cell = layoutLocked ? 'div' : 'button';
                         return (
-                            <div key={node.id} className="relative flex flex-col items-center group">
+                            <div 
+                                key={node.id} 
+                                className="relative flex flex-col items-center group"
+                                // FIX: Reset text direction to left-to-right for internal text alignment
+                                style={{ direction: 'ltr' }}
+                            >
                                 <Cell
                                     {...(!layoutLocked && { onClick: () => onToggleNode(node.index) })}
                                     className={`
