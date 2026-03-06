@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { SimulationResult, SimulationInputs } from '../types';
 import { MoveRight } from 'lucide-react';
 
@@ -33,6 +33,19 @@ const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode, l
     const getTextColor = (tempF: number) => {
         return 'text-white/95';
     };
+
+    // FIX: Manually reverse each row chunk so that indexing starts from the right 
+    // This maps the data to match the handwritten [4][3][2][1] layout visually.
+    const displayGrid = useMemo(() => {
+        const cols = inputs.columns || 4;
+        const result = [];
+        for (let i = 0; i < data.grid.length; i += cols) {
+            const rowChunk = data.grid.slice(i, i + cols);
+            // Reverse the array elements within this row
+            result.push(...[...rowChunk].reverse());
+        }
+        return result;
+    }, [data.grid, inputs.columns]);
 
     const flowRotation = inputs.windDirection;
     const colGapPx = Math.max(inputs.colSpacing * 3, 10);
@@ -82,23 +95,17 @@ const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode, l
                     style={{
                         gridTemplateColumns: `repeat(${inputs.columns}, minmax(0, 1fr))`,
                         columnGap: `${colGapPx}px`,
-                        rowGap: `${rowGapPx}px`,
-                        // FIX: Added direction rtl to start indexing from the right as per user layout
-                        direction: 'rtl'
+                        rowGap: `${rowGapPx}px`
                     }}
                 >
-                    {data.grid.map((node) => {
+                    {/* Using our reordered displayGrid here */}
+                    {displayGrid.map((node) => {
                         const tempF = node.totalTemp;
                         const displayTemp = tempUnit === 'K' ? fToK(tempF) : tempF;
                         const unitLabel = tempUnit === 'K' ? ' K' : ' °F';
                         const Cell = layoutLocked ? 'div' : 'button';
                         return (
-                            <div 
-                                key={node.id} 
-                                className="relative flex flex-col items-center group"
-                                // FIX: Reset text direction to left-to-right for internal text alignment
-                                style={{ direction: 'ltr' }}
-                            >
+                            <div key={node.id} className="relative flex flex-col items-center group">
                                 <Cell
                                     {...(!layoutLocked && { onClick: () => onToggleNode(node.index) })}
                                     className={`
@@ -119,7 +126,7 @@ const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode, l
                                 >
                                     {node.isActive ? (
                                         <span className={`text-xs md:text-sm font-bold drop-shadow-sm font-mono relative z-10 ${getTextColor(tempF)}`}>
-                                            {tempUnit === 'K' ? displayTemp.toFixed(1) : displayTemp.toFixed(1)}{unitLabel}
+                                            {displayTemp.toFixed(1)}{unitLabel}
                                         </span>
                                     ) : (
                                         <span className="text-[9px] font-bold text-zinc-700 uppercase tracking-widest pointer-events-none">
