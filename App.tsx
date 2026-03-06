@@ -438,6 +438,7 @@ const App: React.FC = () => {
                                 onToggleNode={handleToggleNode}
                                 layoutLocked
                                 tempUnit={tempUnit}
+                                onWindDirectionChange={(angle) => setInputs((prev) => ({ ...prev, windDirection: angle }))}
                             />
                         )}
                         {viewMode === 'cutplane' && (

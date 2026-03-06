@@ -4,7 +4,7 @@
  */
 export const DATABASE_PARAMETER_BOUNDS = {
   windSpeed: { min: 0, max: 10.0 },
-  cfm: { min: 30_000, max: 150_000 },
+  cfm: { min: 0, max: 150_000 },
   orientation: { min: 0, max: 90 },
   rowSpacing: { min: 10.0, max: 20.0 },
 } as const;

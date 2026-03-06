@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { SimulationResult, SimulationInputs } from '../types';
+import { getApiChillerNumberForDisplayIndex } from '../services/chillerApi';
 
 interface CutPlaneViewProps {
     data: SimulationResult;
@@ -116,10 +117,13 @@ const CutPlaneView: React.FC<CutPlaneViewProps> = ({ data, inputs }) => {
                 ctx.fillStyle = '#3b82f6';
                 ctx.fillRect(xPos, yPos - extensionHeightPx, chillerWidthPx, extensionHeightPx);
             }
-            // ID label (visual confirmation of reversal)
+            const apiChillerNum = getApiChillerNumberForDisplayIndex(node.index);
+            ctx.font = 'bold 14px monospace';
+            ctx.strokeStyle = '#0f172a';
+            ctx.lineWidth = 2.5;
+            ctx.strokeText(String(apiChillerNum), xPos + 6, yPos + 18);
             ctx.fillStyle = '#f8fafc';
-            ctx.font = 'bold 10px monospace';
-            ctx.fillText(`${node.index + 1}`, xPos + 5, yPos + 15);
+            ctx.fillText(String(apiChillerNum), xPos + 6, yPos + 18);
         });
 
         ctx.fillStyle = '#020617';

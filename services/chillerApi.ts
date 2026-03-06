@@ -7,6 +7,23 @@
 
 const OUTPUT_KEYS = Array.from({ length: 20 }, (_, i) => `Chiller ${String(i + 1).padStart(2, '0')}`);
 
+/** Label for chiller at 0-based index (matches API keys "Chiller 01" … "Chiller 20"). */
+export function getChillerLabel(index: number): string {
+  return `Chiller ${String(index + 1).padStart(2, '0')}`;
+}
+
+/**
+ * Grid uses row-reversed layout: row 0 left→right shows API Chiller 04,03,02,01.
+ * Given a node's display index i (0–19), returns the 1-based API chiller number
+ * whose temperature is shown in that cell (1–20).
+ */
+export function getApiChillerNumberForDisplayIndex(displayIndex: number, columns = 4): number {
+  const row = Math.floor(displayIndex / columns);
+  const col = displayIndex % columns;
+  const dataIndex = row * columns + (columns - 1 - col);
+  return dataIndex + 1;
+}
+
 export type ChillerPredictParams = {
   windSpeed: number;   // m/s
   cfm: number;        // CFM (not kCFM)

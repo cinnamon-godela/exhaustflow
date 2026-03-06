@@ -115,7 +115,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ inputs, results, onUpdate
             
             const ranges = inputRanges ?? {
                 windSpeed: { min: 0, max: 10 },
-                flowRateKcfm: { min: 30, max: 150 },
+                flowRateKcfm: { min: 0, max: 150 },
                 orientation: { min: 0, max: 90 },
                 rowSpacing: { min: 10, max: 20 },
             };
