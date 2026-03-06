@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { SimulationResult, SimulationInputs } from '../types';
 import { MoveRight } from 'lucide-react';
 
@@ -17,7 +17,7 @@ interface HeatmapGridProps {
 
 const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode, layoutLocked = false, tempUnit = 'F' }) => {
     
-    // Two colors only: blue → red
+    // Thermal color logic: blue → red
     const getThermalColor = (tempF: number) => {
         const base = inputs.ambientTemp;
         const rise = tempF - base;
@@ -33,25 +33,6 @@ const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode, l
     const getTextColor = (tempF: number) => {
         return 'text-white/95';
     };
-
-    /** * THE FIX: Hard-reverse every row of 4 chillers.
-     * This takes [C1, C2, C3, C4, C5, C6, C7, C8...]
-     * and transforms it to [C4, C3, C2, C1, C8, C7, C6, C5...]
-     */
-    const displayGrid = useMemo(() => {
-        if (!data.grid || data.grid.length === 0) return [];
-        
-        const COLS = 4; // Your physical layout is 4 units wide
-        const result = [];
-        
-        for (let i = 0; i < data.grid.length; i += COLS) {
-            // Take a row chunk (e.g., 0-3, 4-7, 8-11...)
-            const row = data.grid.slice(i, i + COLS);
-            // Reverse that specific row only
-            result.push(...[...row].reverse());
-        }
-        return result;
-    }, [data.grid]);
 
     const flowRotation = inputs.windDirection;
     const colGapPx = Math.max(inputs.colSpacing * 3, 10);
@@ -90,30 +71,51 @@ const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode, l
                 className="relative bg-[#18181b] rounded-xl border border-[#27272a] shadow-2xl transition-all max-w-full max-h-full overflow-auto"
                 style={{ padding: `${containerPaddingPx}px` }}
             >
-                {/* Row Label */}
+                {/* Visual Column Labels (4 3 2 1) */}
+                <div className="absolute top-8 left-0 right-0 flex justify-around px-20 pointer-events-none">
+                    {[4, 3, 2, 1].map(num => (
+                        <span key={num} className="text-red-500 font-bold text-lg">{num}</span>
+                    ))}
+                </div>
+
+                {/* Labels */}
                 <div className="absolute left-6 top-1/2 -translate-y-1/2 -rotate-90 text-[10px] text-zinc-600 font-bold tracking-[0.2em] uppercase whitespace-nowrap">
                     Row Index
                 </div>
                 
-                {/* Dynamic Grid */}
+                {/* The Fixed 5x4 Grid */}
                 <div 
                     className="grid transition-all duration-300 ease-out"
                     style={{
-                        // Ensure this matches the chunking logic (4 columns)
-                        gridTemplateColumns: `repeat(4, minmax(0, 1fr))`, 
+                        // Forces 4 columns as per your physical layout
+                        gridTemplateColumns: `repeat(4, minmax(0, 1fr))`,
                         columnGap: `${colGapPx}px`,
                         rowGap: `${rowGapPx}px`,
-                        direction: 'ltr' // Explicitly Left-to-Right
                     }}
                 >
-                    {/* Map through the reordered grid */}
-                    {displayGrid.map((node) => {
+                    {data.grid.map((node) => {
                         const tempF = node.totalTemp;
                         const displayTemp = tempUnit === 'K' ? fToK(tempF) : tempF;
                         const unitLabel = tempUnit === 'K' ? ' K' : ' °F';
                         const Cell = layoutLocked ? 'div' : 'button';
+
+                        /** * CORE FIX: Explicitly set gridColumn and gridRow based on ID
+                         * Chiller 1 (index 0) -> Column 4, Row 1
+                         * Chiller 4 (index 3) -> Column 1, Row 1
+                         * This forces the 4 3 2 1 RTL layout visually.
+                         */
+                        const colPos = 4 - (node.index % 4);
+                        const rowPos = Math.floor(node.index / 4) + 1;
+
                         return (
-                            <div key={node.id} className="relative flex flex-col items-center group">
+                            <div 
+                                key={node.id} 
+                                className="relative flex flex-col items-center group"
+                                style={{ 
+                                    gridColumnStart: colPos, 
+                                    gridRowStart: rowPos 
+                                }}
+                            >
                                 <Cell
                                     {...(!layoutLocked && { onClick: () => onToggleNode(node.index) })}
                                     className={`
@@ -148,7 +150,7 @@ const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode, l
                 </div>
             </div>
 
-            {/* Legend: actual temp range */}
+            {/* Legend */}
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 bg-zinc-900/90 backdrop-blur px-5 py-3 rounded-xl border border-zinc-700 shadow-2xl z-20">
                 <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-wider">
                     Intake temp ({tempUnit === 'K' ? 'K' : '°F'})
@@ -165,7 +167,6 @@ const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode, l
                     </span>
                 </div>
             </div>
-            
         </div>
     );
 };
