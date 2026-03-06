@@ -74,7 +74,7 @@ const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode, l
                 {/* Visual Column Labels (4 3 2 1) */}
                 <div className="absolute top-8 left-0 right-0 flex justify-around px-20 pointer-events-none">
                     {[4, 3, 2, 1].map(num => (
-                        <span key={num} className="text-red-500 font-bold text-lg">{num}</span>
+                        <span key={num} className="text-red-500/50 font-bold text-lg">{num}</span>
                     ))}
                 </div>
 
@@ -87,7 +87,6 @@ const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode, l
                 <div 
                     className="grid transition-all duration-300 ease-out"
                     style={{
-                        // Forces 4 columns as per your physical layout
                         gridTemplateColumns: `repeat(4, minmax(0, 1fr))`,
                         columnGap: `${colGapPx}px`,
                         rowGap: `${rowGapPx}px`,
@@ -99,10 +98,9 @@ const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode, l
                         const unitLabel = tempUnit === 'K' ? ' K' : ' °F';
                         const Cell = layoutLocked ? 'div' : 'button';
 
-                        /** * CORE FIX: Explicitly set gridColumn and gridRow based on ID
-                         * Chiller 1 (index 0) -> Column 4, Row 1
-                         * Chiller 4 (index 3) -> Column 1, Row 1
-                         * This forces the 4 3 2 1 RTL layout visually.
+                        /** * CORE FIX: Force 4-3-2-1 columns
+                         * index 0 (C1) -> Col 4
+                         * index 3 (C4) -> Col 1
                          */
                         const colPos = 4 - (node.index % 4);
                         const rowPos = Math.floor(node.index / 4) + 1;

@@ -25,7 +25,6 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ data, comparisonData, isEftActi
 
     return (
         <div className="flex flex-col gap-2">
-            {/* Compact metric strip — Apple-style: one bar, numbers forward */}
             <div className="flex items-center rounded-xl bg-zinc-900/40 border border-zinc-800/80 overflow-hidden">
                 <div className="flex-1 flex items-center justify-around min-h-0 py-2 px-4 gap-6">
                     <div className="flex items-baseline gap-1.5">
@@ -54,7 +53,6 @@ const StatsPanel: React.FC<StatsPanelProps> = ({ data, comparisonData, isEftActi
                 </div>
             </div>
 
-            {/* Expandable: compact */}
             <div className={`
                 overflow-hidden transition-all duration-300 ease-out rounded-lg border border-zinc-800/80 bg-zinc-900/60
                 ${isExpanded ? 'max-h-[320px] opacity-100' : 'max-h-0 opacity-0 border-0'}
