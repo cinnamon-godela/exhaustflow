@@ -34,14 +34,18 @@ const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode, l
         return 'text-white/95';
     };
 
-    // FIX: Manually reverse each row chunk so that indexing starts from the right 
-    // This maps the data to match the handwritten [4][3][2][1] layout visually.
+    // FIX: Re-mapping the grid to reverse EVERY row visually.
+    // This ensures Chiller 4, 8, 12, 16, 20 are on the LEFT.
     const displayGrid = useMemo(() => {
+        if (!data.grid || data.grid.length === 0) return [];
+        
         const cols = inputs.columns || 4;
         const result = [];
+        
+        // Loop through the array in chunks of 'cols'
         for (let i = 0; i < data.grid.length; i += cols) {
             const rowChunk = data.grid.slice(i, i + cols);
-            // Reverse the array elements within this row
+            // Reverse the current row and add it to our display result
             result.push(...[...rowChunk].reverse());
         }
         return result;
@@ -93,17 +97,18 @@ const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode, l
                 <div 
                     className="grid transition-all duration-300 ease-out"
                     style={{
-                        gridTemplateColumns: `repeat(${inputs.columns}, minmax(0, 1fr))`,
+                        gridTemplateColumns: `repeat(${inputs.columns || 4}, minmax(0, 1fr))`,
                         columnGap: `${colGapPx}px`,
                         rowGap: `${rowGapPx}px`
                     }}
                 >
-                    {/* Using our reordered displayGrid here */}
+                    {/* Map through our rearranged displayGrid instead of data.grid */}
                     {displayGrid.map((node) => {
                         const tempF = node.totalTemp;
                         const displayTemp = tempUnit === 'K' ? fToK(tempF) : tempF;
                         const unitLabel = tempUnit === 'K' ? ' K' : ' °F';
                         const Cell = layoutLocked ? 'div' : 'button';
+                        
                         return (
                             <div key={node.id} className="relative flex flex-col items-center group">
                                 <Cell
