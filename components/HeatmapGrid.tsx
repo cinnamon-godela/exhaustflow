@@ -71,13 +71,6 @@ const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode, l
                 className="relative bg-[#18181b] rounded-xl border border-[#27272a] shadow-2xl transition-all max-w-full max-h-full overflow-auto"
                 style={{ padding: `${containerPaddingPx}px` }}
             >
-                {/* Visual Column Labels (1 2 3 4) - Standard horizontal flow */}
-                <div className="absolute top-8 left-0 right-0 flex justify-around px-20 pointer-events-none">
-                    {[1, 2, 3, 4].map(num => (
-                        <span key={num} className="text-red-500/50 font-bold text-lg">{num}</span>
-                    ))}
-                </div>
-
                 {/* Labels */}
                 <div className="absolute left-6 top-1/2 -translate-y-1/2 -rotate-90 text-[10px] text-zinc-600 font-bold tracking-[0.2em] uppercase whitespace-nowrap">
                     Row Index
@@ -98,7 +91,7 @@ const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode, l
                         const unitLabel = tempUnit === 'K' ? ' K' : ' °F';
                         const Cell = layoutLocked ? 'div' : 'button';
 
-                        /** * CORE FIX: Standard 1-2-3-4 columns
+                        /** * CORE LOGIC: Standard 1-2-3-4 columns
                          * index 0 (C1) -> Column 1 (Far Left)
                          * index 3 (C4) -> Column 4 (Far Right)
                          */
