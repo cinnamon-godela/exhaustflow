@@ -34,22 +34,27 @@ const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode, l
         return 'text-white/95';
     };
 
-    // FIX: Re-mapping the grid to reverse EVERY row visually.
-    // This ensures Chiller 4, 8, 12, 16, 20 are on the LEFT.
+    /** * FIX: Explicitly Reversing Every Row
+     * This logic takes the flat array [1,2,3,4, 5,6,7,8...] 
+     * and turns it into [4,3,2,1, 8,7,6,5...] 
+     */
     const displayGrid = useMemo(() => {
         if (!data.grid || data.grid.length === 0) return [];
         
-        const cols = inputs.columns || 4;
-        const result = [];
+        // We force 4 columns here to match your physical layout requirements
+        const rowWidth = 4; 
+        const reordered = [];
         
-        // Loop through the array in chunks of 'cols'
-        for (let i = 0; i < data.grid.length; i += cols) {
-            const rowChunk = data.grid.slice(i, i + cols);
-            // Reverse the current row and add it to our display result
-            result.push(...[...rowChunk].reverse());
+        for (let i = 0; i < data.grid.length; i += rowWidth) {
+            // Get the 4 chillers for this row
+            const chunk = data.grid.slice(i, i + rowWidth);
+            // Reverse them: [1,2,3,4] becomes [4,3,2,1]
+            // We use spread [...chunk] to avoid mutating the original data
+            reordered.push(...[...chunk].reverse());
         }
-        return result;
-    }, [data.grid, inputs.columns]);
+        
+        return reordered;
+    }, [data.grid]);
 
     const flowRotation = inputs.windDirection;
     const colGapPx = Math.max(inputs.colSpacing * 3, 10);
@@ -97,18 +102,18 @@ const HeatmapGrid: React.FC<HeatmapGridProps> = ({ data, inputs, onToggleNode, l
                 <div 
                     className="grid transition-all duration-300 ease-out"
                     style={{
+                        // We use inputs.columns or fallback to 4
                         gridTemplateColumns: `repeat(${inputs.columns || 4}, minmax(0, 1fr))`,
                         columnGap: `${colGapPx}px`,
                         rowGap: `${rowGapPx}px`
                     }}
                 >
-                    {/* Map through our rearranged displayGrid instead of data.grid */}
+                    {/* CRITICAL: We map through displayGrid (the reordered one) */}
                     {displayGrid.map((node) => {
                         const tempF = node.totalTemp;
                         const displayTemp = tempUnit === 'K' ? fToK(tempF) : tempF;
                         const unitLabel = tempUnit === 'K' ? ' K' : ' °F';
                         const Cell = layoutLocked ? 'div' : 'button';
-                        
                         return (
                             <div key={node.id} className="relative flex flex-col items-center group">
                                 <Cell
